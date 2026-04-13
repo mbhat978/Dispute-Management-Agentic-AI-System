@@ -87,6 +87,85 @@ async def get_dispute_count(db: Session = Depends(get_db)):
     return {"dispute_count": count}
 
 
+@app.get("/api/customers")
+async def get_customers(db: Session = Depends(get_db)):
+    """
+    Return all mock customers for the customer dispute intake form.
+    """
+    try:
+        customers = db.query(models.Customer).order_by(models.Customer.name.asc()).all()
+
+        return {
+            "status": "success",
+            "count": len(customers),
+            "customers": [
+                {
+                    "id": customer.id,
+                    "name": customer.name,
+                    "account_tier": customer.account_tier,
+                    "average_monthly_balance": customer.average_monthly_balance,
+                }
+                for customer in customers
+            ],
+        }
+    except Exception as e:
+        print(f"\n❌ Error fetching customers: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error fetching customers: {str(e)}"
+        )
+
+
+@app.get("/api/customers/{customer_id}/transactions")
+async def get_customer_transactions(customer_id: int, db: Session = Depends(get_db)):
+    """
+    Return recent transactions for a specific customer.
+    """
+    try:
+        customer = db.query(models.Customer).filter(
+            models.Customer.id == customer_id
+        ).first()
+
+        if not customer:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Customer with ID {customer_id} not found"
+            )
+
+        transactions = db.query(models.Transaction).filter(
+            models.Transaction.customer_id == customer_id
+        ).order_by(models.Transaction.transaction_date.desc()).limit(10).all()
+
+        return {
+            "status": "success",
+            "customer": {
+                "id": customer.id,
+                "name": customer.name,
+            },
+            "count": len(transactions),
+            "transactions": [
+                {
+                    "id": transaction.id,
+                    "customer_id": transaction.customer_id,
+                    "amount": transaction.amount,
+                    "merchant_name": transaction.merchant_name,
+                    "transaction_date": transaction.transaction_date.isoformat(),
+                    "status": transaction.status,
+                    "is_international": transaction.is_international,
+                }
+                for transaction in transactions
+            ],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"\n❌ Error fetching customer transactions: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error fetching customer transactions: {str(e)}"
+        )
+
+
 @app.get("/api/disputes")
 async def get_all_disputes(db: Session = Depends(get_db)):
     """
