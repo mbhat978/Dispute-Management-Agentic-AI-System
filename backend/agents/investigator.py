@@ -1,172 +1,461 @@
 """
 Investigator Agent for Banking Dispute Management System
 
-This module contains the investigator agent that gathers evidence using tools
-based on the dispute category. It implements the Thought → Action → Observation loop.
+This module contains the investigator agent that gathers evidence using a
+dynamic ReAct-style tool plan with optional LLM guidance and rule-based fallback.
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, List, Tuple
+import json
+from datetime import datetime
+from pydantic import SecretStr
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
 import banking_tools
 import models
 from database import SessionLocal
 from .state import DisputeState
+from .config import OPENAI_API_KEY, INVESTIGATOR_MODEL, INVESTIGATOR_TEMPERATURE
 
 
 def investigator_node(state: DisputeState) -> Dict[str, Any]:
     """
-    Investigator Agent: The ReAct core that gathers evidence using tools.
-    
-    Based on the dispute category, this agent decides which tools to call,
-    executes them, and stores the results. It implements the
-    Thought → Action → Observation loop.
-    
-    Args:
-        state (DisputeState): Current dispute state
-        
-    Returns:
-        Dict with updated gathered_data and audit_trail
+    Investigator Agent: Gathers evidence using dynamic tool selection.
     """
     print("\n[INVESTIGATOR AGENT] Gathering evidence...")
-    
+
     category = state["dispute_category"]
     ticket_id = state["ticket_id"]
     customer_id = state["customer_id"]
     gathered_data = dict(state["gathered_data"])
     audit_trail = list(state["audit_trail"])
-    
-    # Get transaction ID from the dispute ticket
+    working_memory = dict(state.get("working_memory", {}))
+    agent_memories = dict(state.get("agent_memories", {}))
+    iteration_count = state.get("iteration_count", 0)
+
     db = SessionLocal()
     try:
         ticket = db.query(models.DisputeTicket).filter(
             models.DisputeTicket.id == ticket_id
         ).first()
-        
+
         if not ticket:
             audit_trail.append("Investigator Agent: ERROR - Ticket not found")
-            return {"gathered_data": gathered_data, "audit_trail": audit_trail}
-        
+            return {
+                "gathered_data": gathered_data,
+                "audit_trail": audit_trail,
+                "investigation_confidence": 0.0,
+                "evidence_quality_score": 0.0,
+                "investigation_summary": "Ticket not found"
+            }
+
         transaction_id: int = ticket.transaction_id  # type: ignore[assignment]
-        
-        # THOUGHT: Determine investigation strategy based on category
-        thought = f"Investigator Agent THOUGHT: Dispute categorized as '{category}'. Need to gather relevant evidence."
-        audit_trail.append(thought)
-        print(f"  [THOUGHT] {thought}")
-        
-        # Get transaction details (always needed)
-        action = f"Investigator Agent ACTION: Retrieving transaction details for transaction {transaction_id}"
-        audit_trail.append(action)
-        print(f"  [ACTION] {action}")
-        
-        trans_details = banking_tools.get_transaction_details(transaction_id)
-        gathered_data["transaction_details"] = trans_details
-        
-        observation = f"Investigator Agent OBSERVATION: Transaction details retrieved - Amount: ${trans_details.get('amount', 0)}, Merchant: {trans_details.get('merchant_name', 'Unknown')}, Status: {trans_details.get('status', 'Unknown')}"
-        audit_trail.append(observation)
-        print(f"  [OBSERVATION] {observation}")
-        
-        # Category-specific investigation
-        if category == "fraud":
-            # Check customer history for fraud patterns
-            action = f"Investigator Agent ACTION: Checking customer history for transaction patterns"
-            audit_trail.append(action)
-            print(f"  [ACTION] {action}")
-            
-            history = banking_tools.get_customer_history(customer_id, limit=5)
-            gathered_data["customer_history"] = history
-            
-            is_international = trans_details.get("is_international", False)
-            observation = f"Investigator Agent OBSERVATION: Customer has {history.get('transaction_count', 0)} recent transactions. Current transaction is {'international' if is_international else 'domestic'}."
-            audit_trail.append(observation)
-            print(f"  [OBSERVATION] {observation}")
-            
-        elif category == "duplicate":
-            # Check for duplicate transactions
-            action = f"Investigator Agent ACTION: Checking for duplicate transactions"
-            audit_trail.append(action)
-            print(f"  [ACTION] {action}")
-            
-            duplicates = banking_tools.check_duplicate_transactions(
-                customer_id=customer_id,
-                merchant_name=trans_details.get("merchant_name", ""),
-                amount=trans_details.get("amount", 0),
-                date=trans_details.get("transaction_date", ""),
-                time_window_hours=24
+
+        plan, planner_mode = _build_investigation_plan(
+            category=category,
+            customer_id=customer_id,
+            transaction_id=transaction_id,
+            customer_query=state["customer_query"],
+            working_memory=working_memory,
+            prior_gathered_data=gathered_data,
+        )
+
+        audit_trail.append(
+            f"Investigator Agent THOUGHT: Built investigation plan using {planner_mode}. "
+            f"Planned steps: {[step['tool'] for step in plan]}"
+        )
+
+        executed_steps: List[str] = []
+        for step in plan:
+            tool_name = step["tool"]
+            tool_input = step["input"]
+            data_key = step["data_key"]
+
+            audit_trail.append(
+                f"Investigator Agent ACTION: Calling {tool_name} with input {json.dumps(tool_input, default=str)}"
             )
-            gathered_data["duplicate_check"] = duplicates
-            
-            observation = f"Investigator Agent OBSERVATION: {duplicates.get('message', 'Duplicate check completed')}"
-            audit_trail.append(observation)
-            print(f"  [OBSERVATION] {observation}")
-            
-        elif category == "atm_failure":
-            # Check ATM logs
-            action = f"Investigator Agent ACTION: Checking ATM logs for transaction {transaction_id}"
-            audit_trail.append(action)
-            print(f"  [ACTION] {action}")
-            
-            atm_logs = banking_tools.check_atm_logs(transaction_id)
-            gathered_data["atm_logs"] = atm_logs
-            
-            observation = f"Investigator Agent OBSERVATION: {atm_logs.get('message', 'ATM log check completed')}"
-            audit_trail.append(observation)
-            print(f"  [OBSERVATION] {observation}")
-            
-        elif category == "failed_transaction":
-            # Check transaction status
-            status = trans_details.get("status", "")
-            observation = f"Investigator Agent OBSERVATION: Transaction status is '{status}'. Verifying if amount was deducted despite failure."
-            audit_trail.append(observation)
-            print(f"  [OBSERVATION] {observation}")
-            
-        elif category == "merchant_dispute":
-            # Get transaction and customer context
-            action = f"Investigator Agent ACTION: Gathering merchant transaction context"
-            audit_trail.append(action)
-            print(f"  [ACTION] {action}")
-            
-            observation = f"Investigator Agent OBSERVATION: Merchant dispute requires human review for policy assessment."
-            audit_trail.append(observation)
-            print(f"  [OBSERVATION] {observation}")
-            
-        elif category == "loan_dispute":
-            # Get loan details for the customer
-            action = f"Investigator Agent ACTION: Retrieving loan details for customer {customer_id}"
-            audit_trail.append(action)
-            print(f"  [ACTION] {action}")
-            
-            loan_details = banking_tools.get_loan_details(customer_id)
-            gathered_data["loan_details"] = loan_details
-            
-            observation = f"Investigator Agent OBSERVATION: {loan_details.get('message', 'Loan details retrieved')} - Loan ID: {loan_details.get('loan_id', 'N/A')}, Outstanding: ${loan_details.get('outstanding_amount', 0)}"
-            audit_trail.append(observation)
-            print(f"  [OBSERVATION] {observation}")
-            
-        elif category == "refund_not_received":
-            # Check merchant refund status
-            merchant_name = trans_details.get("merchant_name", "")
-            action = f"Investigator Agent ACTION: Checking refund status with merchant '{merchant_name}' for transaction {transaction_id}"
-            audit_trail.append(action)
-            print(f"  [ACTION] {action}")
-            
-            refund_status = banking_tools.check_merchant_refund_status(transaction_id)
-            gathered_data["refund_status"] = refund_status
-            
-            observation = f"Investigator Agent OBSERVATION: {refund_status.get('message', 'Refund status check completed')} - Status: {refund_status.get('status', 'Unknown')}"
-            audit_trail.append(observation)
-            print(f"  [OBSERVATION] {observation}")
+
+            observation = _execute_tool(tool_name, tool_input)
+            gathered_data[data_key] = observation
+            executed_steps.append(tool_name)
+
+            audit_trail.append(
+                f"Investigator Agent OBSERVATION: {tool_name} returned {json.dumps(observation, default=str)}"
+            )
+
+        investigation_confidence, evidence_quality_score, summary = _assess_evidence(
+            category=category,
+            gathered_data=gathered_data,
+            planner_mode=planner_mode,
+            iteration_count=iteration_count,
+            clarification_needed=working_memory.get("clarification_needed", False),
+        )
+
+        working_memory["last_investigation_plan"] = plan
+        working_memory["last_investigation_timestamp"] = datetime.utcnow().isoformat()
+
+        investigator_memory = agent_memories.get(
+            "investigator",
+            {
+                "agent_name": "investigator",
+                "past_actions": [],
+                "learned_patterns": {},
+                "confidence_history": [],
+            }
+        )
+        investigator_memory["past_actions"].append(
+            {
+                "timestamp": datetime.utcnow().isoformat(),
+                "category": category,
+                "executed_tools": executed_steps,
+                "planner_mode": planner_mode,
+                "summary": summary,
+            }
+        )
+        investigator_memory["confidence_history"].append(investigation_confidence)
+        agent_memories["investigator"] = investigator_memory
 
         print(f"  [OK] Investigation complete. Gathered {len(gathered_data)} data points.")
-        
+
         return {
             "gathered_data": gathered_data,
-            "audit_trail": audit_trail
+            "audit_trail": audit_trail,
+            "investigation_confidence": investigation_confidence,
+            "evidence_quality_score": evidence_quality_score,
+            "investigation_summary": summary,
+            "working_memory": working_memory,
+            "agent_memories": agent_memories,
         }
-        
+
     except Exception as e:
         print(f"  [ERROR] Error during investigation: {str(e)}")
         audit_trail.append(f"Investigator Agent ERROR: {str(e)}")
-        return {"gathered_data": gathered_data, "audit_trail": audit_trail}
+        return {
+            "gathered_data": gathered_data,
+            "audit_trail": audit_trail,
+            "investigation_confidence": 0.2,
+            "evidence_quality_score": 0.2,
+            "investigation_summary": f"Investigation failed: {str(e)}",
+        }
     finally:
         db.close()
+
+
+def _build_investigation_plan(
+    category: str,
+    customer_id: int,
+    transaction_id: int,
+    customer_query: str,
+    working_memory: Dict[str, Any],
+    prior_gathered_data: Dict[str, Any],
+) -> Tuple[List[Dict[str, Any]], str]:
+    """
+    Build a dynamic investigation plan using LLM-powered reasoning.
+    
+    This function uses an LLM to intelligently plan which tools to use based on:
+    - Dispute category and customer query
+    - Previously gathered data
+    - Working memory context
+    
+    The LLM provides reasoning for each tool selection, creating a true ReAct
+    investigation strategy that adapts to the specific case.
+    """
+    fallback_plan = _rule_based_plan(category, customer_id, transaction_id, prior_gathered_data)
+
+    if not OPENAI_API_KEY:
+        print("  [INFO] No OpenAI API key, using rule-based planning")
+        return fallback_plan, "rule_based_fallback"
+
+    try:
+        llm = ChatOpenAI(
+            model=INVESTIGATOR_MODEL,
+            temperature=INVESTIGATOR_TEMPERATURE,
+            api_key=SecretStr(OPENAI_API_KEY)
+        )
+        
+        # Enhanced prompt with reasoning requirements
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", """You are an expert banking dispute investigator with deep knowledge of fraud detection, transaction analysis, and evidence gathering.
+
+Your task is to create an intelligent investigation plan by reasoning about which tools to use and why.
+
+AVAILABLE TOOLS:
+1. get_transaction_details - Retrieves full transaction info (amount, merchant, date, status, international flag)
+   Use when: Need basic transaction information (ALWAYS use first if not already gathered)
+   
+2. get_customer_history - Gets last 5 transactions for pattern analysis
+   Use when: Fraud suspected, need to verify spending patterns, check for anomalies
+   
+3. check_atm_logs - Queries ATM machine logs for hardware faults
+   Use when: ATM dispute, need to verify if cash was dispensed or hardware fault occurred
+   
+4. check_duplicate_transactions - Searches for duplicate charges in time window
+   Use when: Duplicate charge suspected, need to find matching transactions
+   
+5. get_loan_details - Retrieves loan EMI schedule and outstanding balance
+   Use when: Loan/EMI dispute, need loan account information
+   
+6. check_merchant_refund_status - Checks if merchant initiated refund
+   Use when: Refund not received, need to verify merchant/gateway status
+
+INVESTIGATION STRATEGY:
+- Start with transaction_details if not already available
+- Choose tools that directly address the dispute category
+- Consider customer query for additional context clues
+- Avoid redundant tool calls (check prior_data_keys)
+- Plan 2-4 tools maximum for efficiency
+
+Return ONLY valid JSON:
+{{
+  "reasoning": "Step-by-step explanation of your investigation strategy and why each tool is needed",
+  "steps": [
+    {{
+      "tool": "tool_name",
+      "data_key": "storage_key",
+      "input": {{"key": "value"}},
+      "rationale": "Why this specific tool is needed for this case"
+    }}
+  ],
+  "expected_evidence": ["evidence1", "evidence2"],
+  "confidence": 0.0-1.0
+}}"""),
+            ("user", """Analyze this dispute and create an investigation plan:
+
+DISPUTE DETAILS:
+- Category: {category}
+- Customer Query: "{query}"
+- Customer ID: {customer_id}
+- Transaction ID: {transaction_id}
+
+CONTEXT:
+- Already Gathered Data: {prior_keys}
+- Working Memory: {working_memory}
+
+Create an intelligent investigation plan with reasoning:""")
+        ])
+
+        print(f"  [LLM] Calling {INVESTIGATOR_MODEL} for investigation planning...")
+        response = llm.invoke(prompt.format_messages(
+            category=category,
+            customer_id=customer_id,
+            transaction_id=transaction_id,
+            query=customer_query,
+            working_memory=json.dumps(working_memory, default=str),
+            prior_keys=list(prior_gathered_data.keys()) if prior_gathered_data else ["none"],
+        ))
+
+        content = response.content if isinstance(response.content, str) else json.dumps(response.content)
+        content = content.strip()
+        
+        # Extract JSON from markdown code blocks if present
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0].strip()
+
+        parsed = json.loads(content)
+        steps = parsed.get("steps", [])
+        reasoning = parsed.get("reasoning", "No reasoning provided")
+        expected_evidence = parsed.get("expected_evidence", [])
+        plan_confidence = parsed.get("confidence", 0.8)
+        
+        print(f"  [LLM] Plan reasoning: {reasoning[:100]}...")
+        print(f"  [LLM] Planned {len(steps)} investigation steps")
+        
+        # Sanitize and validate the plan
+        sanitized = _sanitize_plan(steps, customer_id, transaction_id, prior_gathered_data)
+        
+        if sanitized:
+            print(f"  [OK] Using LLM investigation plan with {len(sanitized)} steps")
+            return sanitized, "llm_planner"
+        else:
+            print(f"  [WARNING] LLM plan validation failed, using fallback")
+            return fallback_plan, "llm_planner_failed_validation"
+
+    except json.JSONDecodeError as e:
+        print(f"  [ERROR] Failed to parse LLM response: {str(e)}")
+        return fallback_plan, "llm_planner_json_error"
+    except Exception as e:
+        print(f"  [ERROR] LLM planning failed: {str(e)}")
+        return fallback_plan, "llm_planner_error"
+
+
+def _rule_based_plan(
+    category: str,
+    customer_id: int,
+    transaction_id: int,
+    prior_gathered_data: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    plan: List[Dict[str, Any]] = []
+
+    if "transaction_details" not in prior_gathered_data:
+        plan.append({
+            "tool": "get_transaction_details",
+            "data_key": "transaction_details",
+            "input": {"transaction_id": transaction_id},
+        })
+
+    if category == "fraud":
+        plan.append({
+            "tool": "get_customer_history",
+            "data_key": "customer_history",
+            "input": {"customer_id": customer_id, "limit": 5},
+        })
+    elif category == "duplicate":
+        plan.append({
+            "tool": "check_duplicate_transactions",
+            "data_key": "duplicate_check",
+            "input": {"customer_id": customer_id},
+        })
+    elif category == "atm_failure":
+        plan.append({
+            "tool": "check_atm_logs",
+            "data_key": "atm_logs",
+            "input": {"transaction_id": transaction_id},
+        })
+    elif category == "loan_dispute":
+        plan.append({
+            "tool": "get_loan_details",
+            "data_key": "loan_details",
+            "input": {"customer_id": customer_id},
+        })
+    elif category == "refund_not_received":
+        plan.append({
+            "tool": "check_merchant_refund_status",
+            "data_key": "refund_status",
+            "input": {"transaction_id": transaction_id},
+        })
+
+    return plan
+
+
+def _sanitize_plan(
+    steps: List[Dict[str, Any]],
+    customer_id: int,
+    transaction_id: int,
+    prior_gathered_data: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    allowed = {
+        "get_transaction_details": "transaction_details",
+        "get_customer_history": "customer_history",
+        "check_atm_logs": "atm_logs",
+        "check_duplicate_transactions": "duplicate_check",
+        "get_loan_details": "loan_details",
+        "check_merchant_refund_status": "refund_status",
+    }
+
+    sanitized: List[Dict[str, Any]] = []
+    for step in steps:
+        tool_name = step.get("tool")
+        if tool_name not in allowed:
+            continue
+
+        data_key = step.get("data_key") or allowed[tool_name]
+        tool_input = step.get("input", {})
+
+        if tool_name == "get_transaction_details":
+            tool_input = {"transaction_id": transaction_id}
+        elif tool_name == "get_customer_history":
+            tool_input = {"customer_id": customer_id, "limit": tool_input.get("limit", 5)}
+        elif tool_name == "check_atm_logs":
+            tool_input = {"transaction_id": transaction_id}
+        elif tool_name == "get_loan_details":
+            tool_input = {"customer_id": customer_id}
+        elif tool_name == "check_merchant_refund_status":
+            tool_input = {"transaction_id": transaction_id}
+        elif tool_name == "check_duplicate_transactions":
+            tool_input = {"customer_id": customer_id}
+
+        if data_key == "transaction_details" and "transaction_details" in prior_gathered_data:
+            continue
+
+        sanitized.append({
+            "tool": tool_name,
+            "data_key": data_key,
+            "input": tool_input,
+        })
+
+    if not sanitized and "transaction_details" not in prior_gathered_data:
+        sanitized.append({
+            "tool": "get_transaction_details",
+            "data_key": "transaction_details",
+            "input": {"transaction_id": transaction_id},
+        })
+
+    return sanitized
+
+
+def _execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
+    if tool_name == "get_transaction_details":
+        return banking_tools.get_transaction_details(tool_input["transaction_id"])
+    if tool_name == "get_customer_history":
+        return banking_tools.get_customer_history(tool_input["customer_id"], tool_input.get("limit", 5))
+    if tool_name == "check_atm_logs":
+        return banking_tools.check_atm_logs(tool_input["transaction_id"])
+    if tool_name == "get_loan_details":
+        return banking_tools.get_loan_details(tool_input["customer_id"])
+    if tool_name == "check_merchant_refund_status":
+        return banking_tools.check_merchant_refund_status(tool_input["transaction_id"])
+    if tool_name == "check_duplicate_transactions":
+        trans_details = banking_tools.get_transaction_details(tool_input.get("transaction_id", 0))
+        if not trans_details:
+            trans_details = {}
+        return banking_tools.check_duplicate_transactions(
+            customer_id=tool_input["customer_id"],
+            merchant_name=trans_details.get("merchant_name", ""),
+            amount=trans_details.get("amount", 0),
+            date=trans_details.get("transaction_date", ""),
+            time_window_hours=24
+        )
+    return {"error": f"Unsupported tool: {tool_name}"}
+
+
+def _assess_evidence(
+    category: str,
+    gathered_data: Dict[str, Any],
+    planner_mode: str,
+    iteration_count: int,
+    clarification_needed: bool,
+) -> Tuple[float, float, str]:
+    evidence_keys = set(gathered_data.keys())
+    base_quality = min(1.0, len(evidence_keys) / 4)
+
+    category_requirements = {
+        "fraud": {"transaction_details", "customer_history"},
+        "duplicate": {"transaction_details", "duplicate_check"},
+        "atm_failure": {"transaction_details", "atm_logs"},
+        "loan_dispute": {"transaction_details", "loan_details"},
+        "refund_not_received": {"transaction_details", "refund_status"},
+        "failed_transaction": {"transaction_details"},
+        "merchant_dispute": {"transaction_details"},
+        "unknown": {"transaction_details"},
+    }
+
+    required = category_requirements.get(category, {"transaction_details"})
+    matched = len(required.intersection(evidence_keys))
+    evidence_quality = max(base_quality, matched / max(len(required), 1))
+
+    if clarification_needed and category == "unknown":
+        evidence_quality = min(evidence_quality, 0.5)
+
+    confidence = evidence_quality
+    if planner_mode == "llm_planner":
+        confidence = min(1.0, confidence + 0.1)
+    if iteration_count > 0:
+        confidence = min(1.0, confidence + 0.05)
+
+    if evidence_quality < 0.6:
+        summary = (
+            f"Investigation gathered limited evidence for category '{category}'. "
+            "Insufficient evidence; may need more information or another investigation pass."
+        )
+    else:
+        summary = (
+            f"Investigation gathered sufficient evidence for category '{category}' "
+            f"using data points: {sorted(evidence_keys)}."
+        )
+
+    return round(confidence, 2), round(evidence_quality, 2), summary
+
 
 # Made with Bob

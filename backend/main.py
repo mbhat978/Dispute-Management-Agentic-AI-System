@@ -13,9 +13,7 @@ load_dotenv()
 from database import engine, get_db, Base
 import models
 from agents.state import DisputeState, initialize_dispute_state
-from agents.triage import triage_node
-from agents.investigator import investigator_node
-from agents.decision import decision_node
+from agents.orchestrator import dispute_resolution_workflow
 
 # Create all tables in the database
 Base.metadata.create_all(bind=engine)
@@ -618,7 +616,7 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
     This endpoint:
     1. Creates a new dispute ticket in the database
     2. Initializes the DisputeState with the provided information
-    3. Invokes the LangGraph workflow (triage → investigator → decision)
+    3. Invokes the LangGraph workflow with dynamic ReAct routing
     4. Returns the final state with the decision and full audit trail
     
     Args:
@@ -667,15 +665,11 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
             dispute_category="unknown"
         )
         
-        # Execute agent nodes directly to avoid workflow/runtime dependency issues
-        triage_result = triage_node(initial_state)
-        triage_state: DisputeState = cast(DisputeState, {**initial_state, **triage_result})
-        
-        investigator_result = investigator_node(triage_state)
-        investigator_state: DisputeState = cast(DisputeState, {**triage_state, **investigator_result})
-        
-        decision_result = decision_node(investigator_state)
-        final_state: DisputeState = cast(DisputeState, {**investigator_state, **decision_result})
+        # Execute the LangGraph workflow so agents can route dynamically
+        final_state: DisputeState = cast(
+            DisputeState,
+            dispute_resolution_workflow.invoke(initial_state)
+        )
         
         print(f"\n{'='*80}")
         print(f"[SUCCESS] DISPUTE PROCESSING COMPLETE")
@@ -695,6 +689,12 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
             "final_decision": final_state["final_decision"],
             "gathered_data": final_state["gathered_data"],
             "audit_trail": final_state["audit_trail"],
+            "triage_confidence": final_state.get("triage_confidence", 0.0),
+            "investigation_confidence": final_state.get("investigation_confidence", 0.0),
+            "decision_confidence": final_state.get("decision_confidence", 0.0),
+            "investigation_summary": final_state.get("investigation_summary", ""),
+            "decision_reasoning": final_state.get("decision_reasoning", {}),
+            "working_memory": final_state.get("working_memory", {}),
             "message": f"Dispute processed successfully. Decision: {final_state['final_decision']}"
         }
         
