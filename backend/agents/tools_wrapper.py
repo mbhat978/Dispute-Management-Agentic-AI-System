@@ -241,6 +241,65 @@ def route_to_human_tool(ticket_id: int, summary: str) -> Dict[str, Any]:
     return banking_tools.route_to_human(ticket_id, summary)
 
 
+@tool
+def get_loan_details_tool(customer_id: int) -> Dict[str, Any]:
+    """
+    Retrieve the customer's loan EMI schedule and outstanding balance.
+    
+    Use this tool when handling loan/EMI related disputes such as incorrect EMI
+    deductions, payment processing issues, outstanding balance queries, or any
+    dispute related to loan accounts.
+    
+    Args:
+        customer_id (int): The unique identifier of the customer.
+        
+    Returns:
+        Dict containing customer information, loan_found (bool), and loan_details
+        with loan_id, monthly_emi_amount, and total_outstanding balance.
+        
+    Example:
+        To check loan details for customer 1: get_loan_details_tool(1)
+        
+    Decision Logic:
+        - If loan_found = False → Customer has no loan account
+        - If loan details present → Use for EMI dispute verification
+        - Compare disputed EMI amount with monthly_emi_amount
+        - Verify outstanding balance for closure disputes
+    """
+    return banking_tools.get_loan_details(customer_id)
+
+
+@tool
+def check_merchant_refund_status_tool(transaction_id: int) -> Dict[str, Any]:
+    """
+    Check the refund status with the merchant/payment gateway.
+    
+    Use this tool when a customer reports that they haven't received a refund
+    for a returned item or cancelled order. This checks if the merchant has
+    initiated the refund and whether it's pending at the payment gateway.
+    
+    Args:
+        transaction_id (int): The unique identifier of the transaction.
+        
+    Returns:
+        Dict containing transaction_id, merchant_name, refund_status
+        ('Refund Pending at Gateway' or 'No Refund Initiated by Merchant'),
+        message, recommendation, and timestamp.
+        
+    Example:
+        To check refund status: check_merchant_refund_status_tool(3)
+        
+    Decision Logic:
+        - 'Refund Pending at Gateway' → Inform customer to wait 3-5 business days
+        - 'No Refund Initiated by Merchant' → Contact merchant or consider chargeback
+        - Use recommendation field for next steps
+        
+    Note: This is a simulated function that randomly returns one of two statuses.
+    In production, this would integrate with actual payment gateway APIs.
+    """
+    return banking_tools.check_merchant_refund_status(transaction_id)
+
+
 # ============================================================================
 # TOOL LIST FOR AGENT CONFIGURATION
 # ============================================================================
@@ -253,7 +312,9 @@ ALL_TOOLS = [
     check_duplicate_transactions_tool,
     block_card_tool,
     initiate_refund_tool,
-    route_to_human_tool
+    route_to_human_tool,
+    get_loan_details_tool,
+    check_merchant_refund_status_tool
 ]
 
 

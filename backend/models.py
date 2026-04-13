@@ -4,6 +4,21 @@ from datetime import datetime
 from database import Base
 
 
+class LoanAccount(Base):
+    __tablename__ = "loan_accounts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False)
+    monthly_emi_amount = Column(Float, nullable=False)
+    total_outstanding = Column(Float, nullable=False)
+
+    # Relationships
+    customer = relationship("Customer", back_populates="loan_accounts")
+
+    def __repr__(self):
+        return f"<LoanAccount(id={self.id}, customer_id={self.customer_id}, emi=${self.monthly_emi_amount})>"
+
+
 class Customer(Base):
     __tablename__ = "customers"
 
@@ -15,6 +30,7 @@ class Customer(Base):
     # Relationships
     transactions = relationship("Transaction", back_populates="customer")
     dispute_tickets = relationship("DisputeTicket", back_populates="customer")
+    loan_accounts = relationship("LoanAccount", back_populates="customer")
 
     def __repr__(self):
         return f"<Customer(id={self.id}, name='{self.name}', tier='{self.account_tier}')>"

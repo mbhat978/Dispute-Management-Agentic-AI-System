@@ -17,6 +17,8 @@ DISPUTE_CATEGORIES = {
     "atm_failure": "ATM did not dispense cash but amount was debited",
     "merchant_dispute": "Dispute with merchant about goods/services",
     "failed_transaction": "Transaction failed but amount was deducted",
+    "loan_dispute": "Dispute related to loan account or EMI",
+    "refund_not_received": "Refund not received from merchant",
     "unknown": "Category not yet determined"
 }
 
@@ -42,7 +44,11 @@ def triage_node(state: DisputeState) -> Dict[str, Any]:
     query_lower = customer_query.lower()
     
     try:
-        if any(term in query_lower for term in ["atm", "cash", "dispense", "debited", "debit"]):
+        if any(term in query_lower for term in ["loan", "emi", "interest", "principal", "tenure", "loan account"]):
+            category = "loan_dispute"
+        elif any(term in query_lower for term in ["refund not received", "refund pending", "refund status", "waiting for refund", "refund delayed"]):
+            category = "refund_not_received"
+        elif any(term in query_lower for term in ["atm", "cash", "dispense", "debited", "debit"]):
             category = "atm_failure"
         elif any(term in query_lower for term in ["fraud", "unauthorized", "unknown transaction", "didn't make", "did not make", "stolen"]):
             category = "fraud"

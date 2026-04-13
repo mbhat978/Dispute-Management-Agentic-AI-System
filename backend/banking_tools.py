@@ -535,6 +535,153 @@ def route_to_human(ticket_id: int, summary: str) -> Dict[str, Any]:
         db.close()
 
 
+def get_loan_details(customer_id: int) -> Dict[str, Any]:
+    """
+    Retrieve the customer's loan EMI schedule and outstanding balance.
+    
+    This function fetches loan account information for a customer, which is
+    useful for handling loan/EMI related disputes such as incorrect EMI
+    deductions, payment processing issues, or outstanding balance queries.
+    
+    Args:
+        customer_id (int): The unique identifier of the customer.
+        
+    Returns:
+        Dict[str, Any]: A dictionary containing:
+            - customer_id: Customer ID
+            - customer_name: Name of the customer
+            - loan_found: Boolean indicating if loan account exists
+            - loan_details: Loan information (if found) with:
+                - loan_id: Loan account ID
+                - monthly_emi_amount: Monthly EMI payment amount
+                - total_outstanding: Total outstanding loan balance
+            - message: Human-readable message about the findings
+            - error: Error message if customer not found
+            
+    Example:
+        >>> loan_info = get_loan_details(1)
+        >>> print(f"EMI: ${loan_info['loan_details']['monthly_emi_amount']}")
+        EMI: $5000.0
+    """
+    db = SessionLocal()
+    try:
+        # Verify customer exists
+        customer = db.query(models.Customer).filter(
+            models.Customer.id == customer_id
+        ).first()
+        
+        if not customer:
+            return {
+                "error": f"Customer ID {customer_id} not found",
+                "customer_id": customer_id
+            }
+        
+        # Get loan account
+        loan = db.query(models.LoanAccount).filter(
+            models.LoanAccount.customer_id == customer_id
+        ).first()
+        
+        if not loan:
+            return {
+                "customer_id": customer_id,
+                "customer_name": customer.name,
+                "loan_found": False,
+                "loan_details": None,
+                "message": f"No loan account found for customer {customer_id} ({customer.name})"
+            }
+        
+        result = {
+            "customer_id": customer_id,
+            "customer_name": customer.name,
+            "loan_found": True,
+            "loan_details": {
+                "loan_id": loan.id,
+                "monthly_emi_amount": loan.monthly_emi_amount,
+                "total_outstanding": loan.total_outstanding
+            },
+            "message": f"Loan account found for {customer.name}. Monthly EMI: ${loan.monthly_emi_amount:.2f}, Outstanding: ${loan.total_outstanding:.2f}"
+        }
+        
+        return result
+        
+    finally:
+        db.close()
+
+
+def check_merchant_refund_status(transaction_id: int) -> Dict[str, Any]:
+    """
+    Check the refund status with the merchant/payment gateway.
+    
+    This is a dummy function that simulates checking refund status with
+    merchants or payment gateways. In a real system, this would integrate
+    with payment gateway APIs to verify if a refund has been initiated
+    by the merchant or is pending at the gateway level.
+    
+    Args:
+        transaction_id (int): The unique identifier of the transaction.
+        
+    Returns:
+        Dict[str, Any]: A dictionary containing:
+            - transaction_id: Transaction ID
+            - refund_status: Status string ('Refund Pending at Gateway' or
+                           'No Refund Initiated by Merchant')
+            - message: Human-readable explanation of the status
+            - timestamp: When the check was performed
+            - recommendation: Suggested action based on status
+            
+    Example:
+        >>> status = check_merchant_refund_status(3)
+        >>> print(status['refund_status'])
+        Refund Pending at Gateway
+    """
+    import random
+    
+    db = SessionLocal()
+    try:
+        # Verify transaction exists
+        transaction = db.query(models.Transaction).filter(
+            models.Transaction.id == transaction_id
+        ).first()
+        
+        if not transaction:
+            return {
+                "error": f"Transaction ID {transaction_id} not found",
+                "transaction_id": transaction_id
+            }
+        
+        # Randomly determine refund status (simulating external API call)
+        statuses = [
+            "Refund Pending at Gateway",
+            "No Refund Initiated by Merchant"
+        ]
+        refund_status = random.choice(statuses)
+        
+        # Generate appropriate message and recommendation
+        if refund_status == "Refund Pending at Gateway":
+            message = (f"Refund for transaction {transaction_id} is pending at the payment gateway. "
+                      f"The merchant has initiated the refund, but it is still being processed.")
+            recommendation = "Wait 3-5 business days for gateway processing. If not received, escalate to gateway support."
+        else:
+            message = (f"No refund has been initiated by merchant {transaction.merchant_name} "
+                      f"for transaction {transaction_id}.")
+            recommendation = "Contact merchant to initiate refund or consider chargeback if merchant is unresponsive."
+        
+        result = {
+            "transaction_id": transaction_id,
+            "merchant_name": transaction.merchant_name,
+            "transaction_amount": transaction.amount,
+            "refund_status": refund_status,
+            "message": message,
+            "recommendation": recommendation,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        return result
+        
+    finally:
+        db.close()
+
+
 # Helper function to get all available tools for agent introspection
 def get_available_tools() -> List[Dict[str, str]]:
     """
@@ -581,6 +728,14 @@ def get_available_tools() -> List[Dict[str, str]]:
         {
             "name": "route_to_human",
             "description": "Route a dispute ticket to human review when automated resolution is not possible"
+        },
+        {
+            "name": "get_loan_details",
+            "description": "Retrieve customer's loan EMI schedule and outstanding balance for loan/EMI disputes"
+        },
+        {
+            "name": "check_merchant_refund_status",
+            "description": "Check refund status with merchant/payment gateway to verify if refund has been initiated"
         }
     ]
     return tools

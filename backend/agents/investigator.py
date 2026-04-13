@@ -127,6 +127,33 @@ def investigator_node(state: DisputeState) -> Dict[str, Any]:
             observation = f"Investigator Agent OBSERVATION: Merchant dispute requires human review for policy assessment."
             audit_trail.append(observation)
             print(f"  [OBSERVATION] {observation}")
+            
+        elif category == "loan_dispute":
+            # Get loan details for the customer
+            action = f"Investigator Agent ACTION: Retrieving loan details for customer {customer_id}"
+            audit_trail.append(action)
+            print(f"  [ACTION] {action}")
+            
+            loan_details = banking_tools.get_loan_details(customer_id)
+            gathered_data["loan_details"] = loan_details
+            
+            observation = f"Investigator Agent OBSERVATION: {loan_details.get('message', 'Loan details retrieved')} - Loan ID: {loan_details.get('loan_id', 'N/A')}, Outstanding: ${loan_details.get('outstanding_amount', 0)}"
+            audit_trail.append(observation)
+            print(f"  [OBSERVATION] {observation}")
+            
+        elif category == "refund_not_received":
+            # Check merchant refund status
+            merchant_name = trans_details.get("merchant_name", "")
+            action = f"Investigator Agent ACTION: Checking refund status with merchant '{merchant_name}' for transaction {transaction_id}"
+            audit_trail.append(action)
+            print(f"  [ACTION] {action}")
+            
+            refund_status = banking_tools.check_merchant_refund_status(transaction_id)
+            gathered_data["refund_status"] = refund_status
+            
+            observation = f"Investigator Agent OBSERVATION: {refund_status.get('message', 'Refund status check completed')} - Status: {refund_status.get('status', 'Unknown')}"
+            audit_trail.append(observation)
+            print(f"  [OBSERVATION] {observation}")
 
         print(f"  [OK] Investigation complete. Gathered {len(gathered_data)} data points.")
         

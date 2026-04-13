@@ -709,6 +709,118 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
         )
 
 
+# ============================================================================
+# ANALYTICS ENDPOINT - Phase 8: Executive Analytics Dashboard
+# ============================================================================
+
+@app.get("/api/analytics")
+async def get_analytics(db: Session = Depends(get_db)):
+    """
+    Executive Analytics Dashboard endpoint.
+    
+    Calculates and returns key business metrics to prove the value of the agentic system:
+    - Total dispute tickets processed
+    - Auto-resolved tickets (auto_approved + auto_rejected)
+    - Human review tickets (human_review_required + resolved_approved + resolved_rejected)
+    - Auto-resolution rate (percentage)
+    - Total fraud prevented (sum of amounts for fraud-related auto-approved tickets)
+    
+    Returns:
+        Dict containing all analytics metrics in a clean JSON structure
+        
+    Raises:
+        HTTPException: If analytics calculation fails
+    """
+    try:
+        print(f"\n{'='*80}")
+        print(f"[ANALYTICS] Calculating Executive Dashboard Metrics")
+        print(f"{'='*80}")
+        
+        # 1. Total tickets
+        total_tickets = db.query(models.DisputeTicket).count()
+        print(f"Total Tickets: {total_tickets}")
+        
+        # 2. Auto-resolved count (auto_approved + auto_rejected)
+        auto_resolved_count = db.query(models.DisputeTicket).filter(
+            models.DisputeTicket.status.in_(['auto_approved', 'auto_rejected'])
+        ).count()
+        print(f"Auto-Resolved Count: {auto_resolved_count}")
+        
+        # 3. Human review count (human_review_required + resolved_approved + resolved_rejected)
+        human_review_count = db.query(models.DisputeTicket).filter(
+            models.DisputeTicket.status.in_([
+                'human_review_required',
+                'resolved_approved',
+                'resolved_rejected'
+            ])
+        ).count()
+        print(f"Human Review Count: {human_review_count}")
+        
+        # 4. Auto-resolution rate
+        auto_resolution_rate = 0.0
+        if total_tickets > 0:
+            auto_resolution_rate = round((auto_resolved_count / total_tickets) * 100, 2)
+        print(f"Auto-Resolution Rate: {auto_resolution_rate}%")
+        
+        # 5. Total fraud prevented
+        # Get all auto-approved tickets where dispute_reason contains fraud-related keywords
+        fraud_keywords = ['fraud', 'fraudulent', 'unauthorized', 'stolen', 'scam', 'phishing']
+        
+        # Query for fraud-related auto-approved tickets with their transaction amounts
+        fraud_tickets = db.query(models.DisputeTicket).filter(
+            models.DisputeTicket.status == 'auto_approved'
+        ).all()
+        
+        total_fraud_prevented: float = 0.0
+        fraud_ticket_count = 0
+        
+        for ticket in fraud_tickets:
+            # Check if dispute reason contains fraud-related keywords
+            dispute_reason_lower = ticket.dispute_reason.lower()
+            is_fraud_related = any(keyword in dispute_reason_lower for keyword in fraud_keywords)
+            
+            if is_fraud_related:
+                # Get the transaction amount
+                transaction = db.query(models.Transaction).filter(
+                    models.Transaction.id == ticket.transaction_id
+                ).first()
+                
+                if transaction is not None:
+                    # Access the actual value from the SQLAlchemy model instance
+                    amount_value = cast(float, transaction.amount)
+                    total_fraud_prevented += amount_value
+                    fraud_ticket_count += 1
+        
+        total_fraud_prevented = round(total_fraud_prevented, 2)
+        print(f"Total Fraud Prevented: ${total_fraud_prevented} ({fraud_ticket_count} tickets)")
+        
+        print(f"{'='*80}\n")
+        
+        # Return analytics in clean JSON structure
+        return {
+            "status": "success",
+            "analytics": {
+                "total_tickets": total_tickets,
+                "auto_resolved_count": auto_resolved_count,
+                "human_review_count": human_review_count,
+                "auto_resolution_rate": auto_resolution_rate,
+                "total_fraud_prevented": total_fraud_prevented,
+                "fraud_tickets_prevented": fraud_ticket_count
+            },
+            "metadata": {
+                "timestamp": datetime.utcnow().isoformat(),
+                "description": "Executive Analytics Dashboard - Proving Business Value of Agentic AI System"
+            }
+        }
+        
+    except Exception as e:
+        print(f"\n[ERROR] Error calculating analytics: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error calculating analytics: {str(e)}"
+        )
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -18,6 +18,14 @@ interface Dispute {
   created_at: string | null;
 }
 
+// Define the Analytics type for executive metrics
+interface Analytics {
+  total_disputes: number;
+  auto_resolution_rate: number;
+  human_intervention_required: number;
+  total_fraud_prevented: number;
+}
+
 // Function to get badge variant and color based on status
 function getStatusBadge(status: string) {
   switch (status) {
@@ -44,29 +52,41 @@ function formatStatus(status: string): string {
 
 export default function DashboardPage() {
   const [disputes, setDisputes] = useState<Dispute[]>([]);
+  const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    async function fetchDisputes() {
+    async function fetchData() {
       try {
-        const response = await fetch("http://localhost:8000/api/disputes");
+        // Fetch both disputes and analytics in parallel
+        const [disputesResponse, analyticsResponse] = await Promise.all([
+          fetch("http://localhost:8000/api/disputes"),
+          fetch("http://localhost:8000/api/analytics")
+        ]);
         
-        if (!response.ok) {
-          throw new Error(`Failed to fetch disputes: ${response.statusText}`);
+        if (!disputesResponse.ok) {
+          throw new Error(`Failed to fetch disputes: ${disputesResponse.statusText}`);
         }
         
-        const data = await response.json();
-        setDisputes(data.disputes || []);
+        if (!analyticsResponse.ok) {
+          throw new Error(`Failed to fetch analytics: ${analyticsResponse.statusText}`);
+        }
+        
+        const disputesData = await disputesResponse.json();
+        const analyticsData = await analyticsResponse.json();
+        
+        setDisputes(disputesData.disputes || []);
+        setAnalytics(analyticsData);
       } catch (err) {
         setError(err instanceof Error ? err.message : "An error occurred");
-        console.error("Error fetching disputes:", err);
+        console.error("Error fetching data:", err);
       } finally {
         setLoading(false);
       }
     }
 
-    fetchDisputes();
+    fetchData();
   }, []);
 
   return (
@@ -85,6 +105,88 @@ export default function DashboardPage() {
           </Button>
         </Link>
       </div>
+
+      {/* Executive Metrics Dashboard */}
+      {analytics && (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {/* Card 1: Total Disputes */}
+          <Card className="border-l-4 border-l-blue-500">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Total Disputes
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold">{analytics.total_disputes}</div>
+              <p className="text-xs text-muted-foreground mt-1">
+                All-time dispute tickets
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Card 2: Auto-Resolution Rate */}
+          <Card className="border-l-4 border-l-green-500">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Auto-Resolution Rate
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-green-600">
+                {(analytics.auto_resolution_rate ?? 0).toFixed(1)}%
+              </div>
+              <div className="mt-2">
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div
+                    className="bg-green-600 h-2 rounded-full transition-all duration-500"
+                    style={{ width: `${analytics.auto_resolution_rate ?? 0}%` }}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  High efficiency indicator
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Card 3: Human Intervention Required */}
+          <Card className="border-l-4 border-l-yellow-500">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Human Intervention Required
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-yellow-600">
+                {analytics.human_intervention_required}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Tickets pending review
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Card 4: Total Fraud Prevented */}
+          <Card className="border-l-4 border-l-purple-500">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Total Fraud Prevented
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-purple-600">
+                ${(analytics.total_fraud_prevented ?? 0).toLocaleString('en-US', {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Fraudulent claims blocked
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Main Content Card */}
       <Card>

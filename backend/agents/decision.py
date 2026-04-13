@@ -110,6 +110,33 @@ def decision_node(state: DisputeState) -> Dict[str, Any]:
                 decision = "auto_rejected"
                 justification = f"Transaction status is '{status}', not 'failed'. Dispute not supported."
                 
+        elif category == "loan_dispute":
+            # ALWAYS route to human review - strict compliance rule
+            # AI should not auto-adjust core banking loan ledgers
+            decision = "human_review_required"
+            loan_details = gathered_data.get("loan_details", {})
+            loan_id = loan_details.get("loan_id", "N/A")
+            outstanding = loan_details.get("outstanding_amount", 0)
+            justification = f"Loan dispute (Loan ID: {loan_id}, Outstanding: ${outstanding}) requires human review. AI cannot auto-adjust core banking loan ledgers per compliance rules."
+            
+        elif category == "refund_not_received":
+            # Check refund status from merchant
+            refund_status = gathered_data.get("refund_status", {})
+            status = refund_status.get("status", "Unknown")
+            
+            if status == "Pending at Gateway":
+                # Auto-approve - inform customer it's processing
+                decision = "auto_approved"
+                justification = f"Refund status is 'Pending at Gateway' for ${amount}. Refund is being processed by payment gateway. Customer will be informed."
+            elif status == "No Refund Initiated":
+                # Route to human review
+                decision = "human_review_required"
+                justification = f"Merchant has not initiated refund for ${amount}. Requires human intervention to contact merchant."
+            else:
+                # For other statuses, route to human review
+                decision = "human_review_required"
+                justification = f"Refund status is '{status}' for ${amount}. Requires human review to determine next steps."
+            
         elif category == "merchant_dispute":
             decision = "human_review_required"
             justification = "Merchant disputes require human review for policy assessment and merchant contact."

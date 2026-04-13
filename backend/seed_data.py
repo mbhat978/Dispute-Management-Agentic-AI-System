@@ -20,6 +20,7 @@ def clear_database(db: Session):
     db.query(models.DisputeTicket).delete()
     db.query(models.ATM_Log).delete()
     db.query(models.Transaction).delete()
+    db.query(models.LoanAccount).delete()
     db.query(models.Customer).delete()
     db.commit()
     print("Database cleared.")
@@ -65,6 +66,39 @@ def create_customers(db: Session):
         print(f"  ✓ Created: {customer.name} (ID: {customer.id}, Tier: {customer.account_tier})")
     
     return customers
+
+
+def create_loan_accounts(db: Session, customers):
+    """Create mock loan accounts for some customers."""
+    print("\nCreating loan accounts...")
+    
+    loan_accounts = [
+        models.LoanAccount(
+            customer_id=customers[0].id,  # John Smith
+            monthly_emi_amount=5000.00,
+            total_outstanding=150000.00
+        ),
+        models.LoanAccount(
+            customer_id=customers[1].id,  # Sarah Johnson
+            monthly_emi_amount=8500.00,
+            total_outstanding=280000.00
+        ),
+        models.LoanAccount(
+            customer_id=customers[3].id,  # Emily Rodriguez
+            monthly_emi_amount=3200.00,
+            total_outstanding=95000.00
+        )
+    ]
+    
+    db.add_all(loan_accounts)
+    db.commit()
+    
+    for loan in loan_accounts:
+        db.refresh(loan)
+        customer = db.query(models.Customer).filter(models.Customer.id == loan.customer_id).first()
+        print(f"  ✓ Loan ID: {loan.id} - Customer: {customer.name if customer else 'Unknown'}, EMI: ${loan.monthly_emi_amount}, Outstanding: ${loan.total_outstanding}")
+    
+    return loan_accounts
 
 
 def create_scenario_transactions(db: Session, customers):
@@ -348,6 +382,7 @@ def print_summary(db: Session):
     print("="*60)
     
     customer_count = db.query(models.Customer).count()
+    loan_count = db.query(models.LoanAccount).count()
     transaction_count = db.query(models.Transaction).count()
     atm_log_count = db.query(models.ATM_Log).count()
     dispute_count = db.query(models.DisputeTicket).count()
@@ -355,6 +390,7 @@ def print_summary(db: Session):
     
     print(f"\n📊 Total Records Created:")
     print(f"  • Customers: {customer_count}")
+    print(f"  • Loan Accounts: {loan_count}")
     print(f"  • Transactions: {transaction_count}")
     print(f"  • ATM Logs: {atm_log_count}")
     print(f"  • Dispute Tickets: {dispute_count}")
@@ -366,6 +402,7 @@ def print_summary(db: Session):
     print(f"  ✓ Standard e-commerce transaction")
     print(f"  ✓ Duplicate charges (same merchant, 3 min apart)")
     print(f"  ✓ ATM transaction with hardware fault")
+    print(f"  ✓ Loan/EMI accounts for dispute scenarios")
     
     print("\n" + "="*60)
     print("✅ Database seeding completed successfully!")
@@ -387,6 +424,7 @@ def main():
         
         # Create data in order
         customers = create_customers(db)
+        loan_accounts = create_loan_accounts(db, customers)
         transactions = create_scenario_transactions(db, customers)
         disputes = create_dispute_tickets(db, transactions)
         audit_logs = create_audit_logs(db, disputes)
