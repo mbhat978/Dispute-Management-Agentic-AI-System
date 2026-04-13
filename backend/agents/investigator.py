@@ -45,7 +45,7 @@ def investigator_node(state: DisputeState) -> Dict[str, Any]:
             audit_trail.append("Investigator Agent: ERROR - Ticket not found")
             return {"gathered_data": gathered_data, "audit_trail": audit_trail}
         
-        transaction_id = ticket.transaction_id
+        transaction_id: int = ticket.transaction_id  # type: ignore[assignment]
         
         # THOUGHT: Determine investigation strategy based on category
         thought = f"Investigator Agent THOUGHT: Dispute categorized as '{category}'. Need to gather relevant evidence."

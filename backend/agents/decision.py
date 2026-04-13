@@ -130,16 +130,16 @@ def decision_node(state: DisputeState) -> Dict[str, Any]:
         
         if ticket:
             if decision == "human_review_required":
-                ticket.status = "human_review_required"
-                ticket.resolution_notes = justification
+                ticket.status = "human_review_required"  # type: ignore[assignment]
+                ticket.resolution_notes = justification  # type: ignore[assignment]
             elif decision == "auto_approved":
-                ticket.status = "auto_approved"
-                ticket.resolution_notes = justification
+                ticket.status = "auto_approved"  # type: ignore[assignment]
+                ticket.resolution_notes = justification  # type: ignore[assignment]
             elif decision == "auto_rejected":
-                ticket.status = "auto_rejected"
-                ticket.resolution_notes = justification
+                ticket.status = "auto_rejected"  # type: ignore[assignment]
+                ticket.resolution_notes = justification  # type: ignore[assignment]
             
-            ticket.updated_at = datetime.utcnow()
+            ticket.updated_at = datetime.utcnow()  # type: ignore[assignment]
             db.commit()
             print(f"  [OK] Updated DisputeTicket #{ticket_id} status to: {ticket.status}")
         

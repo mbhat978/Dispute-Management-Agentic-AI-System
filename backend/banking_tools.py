@@ -7,7 +7,7 @@ database and returns structured information that agents can use for decision-mak
 """
 
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, cast
 from sqlalchemy.orm import Session
 from database import SessionLocal
 import models
@@ -326,7 +326,7 @@ def check_duplicate_transactions(
         db.close()
 
 
-def block_card(customer_id: int, reason: str = "Suspected fraud") -> Dict[str, str]:
+def block_card(customer_id: int, reason: str = "Suspected fraud") -> Dict[str, Any]:
     """
     Block a customer's card due to suspected fraud or security concerns.
     
@@ -337,11 +337,11 @@ def block_card(customer_id: int, reason: str = "Suspected fraud") -> Dict[str, s
     Args:
         customer_id (int): The unique identifier of the customer whose
             card should be blocked.
-        reason (str, optional): The reason for blocking the card. 
+        reason (str, optional): The reason for blocking the card.
             Defaults to "Suspected fraud".
         
     Returns:
-        Dict[str, str]: A dictionary containing:
+        Dict[str, Any]: A dictionary containing:
             - status: "success" or "error"
             - customer_id: Customer ID
             - action: Description of the action taken
@@ -433,13 +433,14 @@ def initiate_refund(
             }
         
         # Validate refund amount
-        if amount > transaction.amount:
+        transaction_amount = cast(float, transaction.amount)
+        if amount > transaction_amount:
             return {
                 "status": "error",
                 "transaction_id": transaction_id,
-                "transaction_amount": transaction.amount,
+                "transaction_amount": transaction_amount,
                 "requested_refund": amount,
-                "message": f"Refund amount ${amount:.2f} exceeds transaction amount ${transaction.amount:.2f}"
+                "message": f"Refund amount ${amount:.2f} exceeds transaction amount ${transaction_amount:.2f}"
             }
         
         # Simulate initiating refund
@@ -448,7 +449,7 @@ def initiate_refund(
             "transaction_id": transaction_id,
             "customer_id": transaction.customer_id,
             "merchant_name": transaction.merchant_name,
-            "original_amount": transaction.amount,
+            "original_amount": transaction_amount,
             "refund_amount": amount,
             "reason": reason,
             "timestamp": datetime.utcnow().isoformat(),
@@ -505,12 +506,13 @@ def route_to_human(ticket_id: int, summary: str) -> Dict[str, Any]:
             }
         
         # Save previous status
-        previous_status = ticket.status
+        previous_status = cast(str, ticket.status)
         
         # Update ticket status and resolution notes
-        ticket.status = "human_review_required"
-        ticket.resolution_notes = summary
-        ticket.updated_at = datetime.utcnow()
+        human_review_status = "human_review_required"
+        setattr(ticket, "status", human_review_status)
+        setattr(ticket, "resolution_notes", summary)
+        setattr(ticket, "updated_at", datetime.utcnow())
         
         db.commit()
         db.refresh(ticket)
@@ -521,7 +523,7 @@ def route_to_human(ticket_id: int, summary: str) -> Dict[str, Any]:
             "transaction_id": ticket.transaction_id,
             "customer_id": ticket.customer_id,
             "previous_status": previous_status,
-            "new_status": ticket.status,
+            "new_status": human_review_status,
             "summary": summary,
             "timestamp": datetime.utcnow().isoformat(),
             "message": f"Ticket {ticket_id} has been routed to human review. Previous status: {previous_status}"
