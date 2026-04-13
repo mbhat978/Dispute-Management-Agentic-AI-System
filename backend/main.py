@@ -4,10 +4,18 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import datetime
 from typing import cast
+from dotenv import load_dotenv
+import os
+
+# Load environment variables from .env file
+load_dotenv()
+
 from database import engine, get_db, Base
 import models
-from agents.orchestrator import dispute_resolution_workflow
-from agents.state import initialize_dispute_state
+from agents.state import DisputeState, initialize_dispute_state
+from agents.triage import triage_node
+from agents.investigator import investigator_node
+from agents.decision import decision_node
 
 # Create all tables in the database
 Base.metadata.create_all(bind=engine)
@@ -110,7 +118,7 @@ async def get_customers(db: Session = Depends(get_db)):
             ],
         }
     except Exception as e:
-        print(f"\n❌ Error fetching customers: {str(e)}")
+        print(f"\n[ERROR] Error fetching customers: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Error fetching customers: {str(e)}"
@@ -160,7 +168,7 @@ async def get_customer_transactions(customer_id: int, db: Session = Depends(get_
     except HTTPException:
         raise
     except Exception as e:
-        print(f"\n❌ Error fetching customer transactions: {str(e)}")
+        print(f"\n[ERROR] Error fetching customer transactions: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Error fetching customer transactions: {str(e)}"
@@ -203,7 +211,7 @@ async def get_all_disputes(db: Session = Depends(get_db)):
         }
         
     except Exception as e:
-        print(f"\n❌ Error fetching disputes: {str(e)}")
+        print(f"\n[ERROR] Error fetching disputes: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Error fetching disputes: {str(e)}"
@@ -314,7 +322,7 @@ async def get_dispute_by_id(ticket_id: int, db: Session = Depends(get_db)):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"\n❌ Error fetching dispute details: {str(e)}")
+        print(f"\n[ERROR] Error fetching dispute details: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Error fetching dispute details: {str(e)}"
@@ -378,7 +386,7 @@ async def approve_dispute(ticket_id: int, db: Session = Depends(get_db)):
         raise
     except Exception as e:
         db.rollback()
-        print(f"\n❌ Error approving dispute: {str(e)}")
+        print(f"\n[ERROR] Error approving dispute: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Error approving dispute: {str(e)}"
@@ -442,7 +450,7 @@ async def reject_dispute(ticket_id: int, db: Session = Depends(get_db)):
         raise
     except Exception as e:
         db.rollback()
-        print(f"\n❌ Error rejecting dispute: {str(e)}")
+        print(f"\n[ERROR] Error rejecting dispute: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Error rejecting dispute: {str(e)}"
@@ -514,7 +522,7 @@ async def resolve_dispute(
             )
         
         print(f"\n{'='*80}")
-        print(f"👤 HUMAN RESOLUTION - TICKET #{ticket_id}")
+        print(f"[HUMAN RESOLUTION] - TICKET #{ticket_id}")
         print(f"{'='*80}")
         print(f"Resolution Status: {request.resolution_status}")
         print(f"Human Notes: {request.human_notes[:100]}...")
@@ -554,7 +562,7 @@ their judgment to override or confirm the AI recommendation."""
         db.commit()
         db.refresh(dispute)
         
-        print(f"\n✅ RESOLUTION COMPLETE")
+        print(f"\n[SUCCESS] RESOLUTION COMPLETE")
         print(f"   Ticket #{ticket_id} status updated to: {request.resolution_status}")
         print(f"   Audit log entry created")
         print(f"{'='*80}\n")
@@ -573,7 +581,7 @@ their judgment to override or confirm the AI recommendation."""
         raise
     except Exception as e:
         db.rollback()
-        print(f"\n❌ Error resolving dispute: {str(e)}")
+        print(f"\n[ERROR] Error resolving dispute: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Error resolving dispute: {str(e)}"
@@ -644,7 +652,7 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
         db.refresh(new_ticket)
         
         print(f"\n{'='*80}")
-        print(f"🚀 PROCESSING DISPUTE TICKET #{new_ticket.id}")
+        print(f"[PROCESSING] DISPUTE TICKET #{new_ticket.id}")
         print(f"{'='*80}")
         print(f"Customer ID: {request.customer_id}")
         print(f"Transaction ID: {request.transaction_id}")
@@ -659,12 +667,18 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
             dispute_category="unknown"
         )
         
-        # Invoke the compiled LangGraph workflow
-        # The workflow will execute: triage → investigator → decision
-        final_state = dispute_resolution_workflow.invoke(initial_state)
+        # Execute agent nodes directly to avoid workflow/runtime dependency issues
+        triage_result = triage_node(initial_state)
+        triage_state: DisputeState = cast(DisputeState, {**initial_state, **triage_result})
+        
+        investigator_result = investigator_node(triage_state)
+        investigator_state: DisputeState = cast(DisputeState, {**triage_state, **investigator_result})
+        
+        decision_result = decision_node(investigator_state)
+        final_state: DisputeState = cast(DisputeState, {**investigator_state, **decision_result})
         
         print(f"\n{'='*80}")
-        print(f"✅ DISPUTE PROCESSING COMPLETE")
+        print(f"[SUCCESS] DISPUTE PROCESSING COMPLETE")
         print(f"{'='*80}")
         print(f"Final Decision: {final_state['final_decision'].upper()}")
         print(f"Category: {final_state['dispute_category']}")
@@ -688,7 +702,7 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        print(f"\n❌ Error processing dispute: {str(e)}")
+        print(f"\n[ERROR] Error processing dispute: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Error processing dispute: {str(e)}"

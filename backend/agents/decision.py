@@ -27,7 +27,7 @@ def decision_node(state: DisputeState) -> Dict[str, Any]:
     Returns:
         Dict with updated final_decision and audit_trail, plus database updates
     """
-    print("\n⚖️  DECISION AGENT: Making final decision...")
+    print("\n[DECISION AGENT] Making final decision...")
     
     category = state["dispute_category"]
     ticket_id = state["ticket_id"]
@@ -121,7 +121,7 @@ def decision_node(state: DisputeState) -> Dict[str, Any]:
         # Add decision to audit trail
         decision_entry = f"Decision Agent DECISION: {decision.upper()} - {justification}"
         audit_trail.append(decision_entry)
-        print(f"  ⚖️  {decision_entry}")
+        print(f"  [DECISION] {decision_entry}")
         
         # Update database: DisputeTicket
         ticket = db.query(models.DisputeTicket).filter(
@@ -141,7 +141,7 @@ def decision_node(state: DisputeState) -> Dict[str, Any]:
             
             ticket.updated_at = datetime.utcnow()
             db.commit()
-            print(f"  ✓ Updated DisputeTicket #{ticket_id} status to: {ticket.status}")
+            print(f"  [OK] Updated DisputeTicket #{ticket_id} status to: {ticket.status}")
         
         # Write audit trail to AuditLog table
         for entry in audit_trail:
@@ -172,13 +172,13 @@ def decision_node(state: DisputeState) -> Dict[str, Any]:
             db.add(audit_log)
         
         db.commit()
-        print(f"  ✓ Saved {len(audit_trail)} audit log entries to database")
+        print(f"  [OK] Saved {len(audit_trail)} audit log entries to database")
         
         # If human review required, use the route_to_human tool
         if decision == "human_review_required":
             banking_tools.route_to_human(ticket_id, justification)
         
-        print(f"  ✅ Final decision: {decision.upper()}")
+        print(f"  [SUCCESS] Final decision: {decision.upper()}")
         
         return {
             "final_decision": decision,
@@ -186,7 +186,7 @@ def decision_node(state: DisputeState) -> Dict[str, Any]:
         }
         
     except Exception as e:
-        print(f"  ✗ Error during decision making: {str(e)}")
+        print(f"  [ERROR] Error during decision making: {str(e)}")
         audit_entry = f"Decision Agent ERROR: {str(e)}"
         audit_trail.append(audit_entry)
         return {
