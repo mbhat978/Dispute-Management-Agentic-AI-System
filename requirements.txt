@@ -1,0 +1,19 @@
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+sqlalchemy==2.0.25
+pydantic==2.5.3
+python-multipart==0.0.6
+
+# LangChain and LangGraph for agent orchestration
+langgraph==0.0.26
+langchain==0.1.10
+langchain-openai==0.0.8
+langchain-core>=0.1.28
+langsmith>=0.1.0
+openai==1.12.0
+
+# Pydantic - use v2 compatible version
+pydantic>=2.5.0,<3.0.0
+
+# Additional utilities
+python-dotenv==1.0.1
