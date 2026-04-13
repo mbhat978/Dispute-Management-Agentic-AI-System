@@ -6,7 +6,8 @@ from datetime import datetime
 from typing import cast
 from database import engine, get_db, Base
 import models
-from agent import dispute_resolution_workflow, initialize_dispute_state
+from agents.orchestrator import dispute_resolution_workflow
+from agents.state import initialize_dispute_state
 
 # Create all tables in the database
 Base.metadata.create_all(bind=engine)
