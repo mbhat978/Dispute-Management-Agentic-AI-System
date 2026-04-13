@@ -137,7 +137,6 @@ export default function CustomerPortalPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          ticket_id: Number(selectedTransactionId),
           transaction_id: Number(selectedTransactionId),
           customer_id: Number(selectedCustomerId),
           customer_query: disputeReason.trim(),
@@ -220,14 +219,9 @@ export default function CustomerPortalPage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <Badge variant="outline" className="border-green-200 bg-green-50 text-green-700">
-              <ShieldCheck className="mr-1 h-3.5 w-3.5" />
-              Secure Session
-            </Badge>
             <Link href="/">
               <Button variant="outline">
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Back to Operations
+                Log Out
               </Button>
             </Link>
           </div>

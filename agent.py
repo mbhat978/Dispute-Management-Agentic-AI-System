@@ -662,12 +662,14 @@ def decision_node(state: DisputeState) -> Dict[str, Any]:
             is_international = trans_details.get("is_international", False)
             account_tier = trans_details.get("account_tier", "Basic")
             
-            if is_international and amount > 5000:
-                # High-value international - requires human review
-                decision = "human_review_required"
-                justification = f"High-value international transaction (${amount}). Blocking card and routing to human review for verification."
-                # Block card as precaution
+            if is_international:
+                # International transaction anomaly detected - auto-approve per UC4 Scenario 1
+                decision = "auto_approved"
+                justification = f"Fraudulent transaction anomaly detected (international transaction, ${amount}). Dispute auto-approved, card blocked, and refund initiated."
+                # Block card for security
                 banking_tools.block_card(customer_id, f"Suspected fraud - unauthorized ${amount} international transaction")
+                # Initiate refund
+                banking_tools.initiate_refund(transaction_id, amount, "Fraud - unauthorized international transaction")
             elif amount > 1000:
                 decision = "human_review_required"
                 justification = f"High-value transaction (${amount}) flagged as fraud. Requires human verification."

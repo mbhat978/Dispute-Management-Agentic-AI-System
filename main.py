@@ -587,13 +587,15 @@ class DisputeProcessRequest(BaseModel):
     """
     Request model for processing a dispute.
     """
-    ticket_id: int
+    transaction_id: int
+    customer_id: int
     customer_query: str
 
     class Config:
         json_schema_extra = {
             "example": {
-                "ticket_id": 5,
+                "transaction_id": 5,
+                "customer_id": 1,
                 "customer_query": "ATM did not dispense cash but my account was debited. ATM showed error message."
             }
         }
@@ -605,13 +607,13 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
     Process a dispute ticket using the multi-agent AI system.
     
     This endpoint:
-    1. Retrieves the dispute ticket and customer information from the database
+    1. Creates a new dispute ticket in the database
     2. Initializes the DisputeState with the provided information
     3. Invokes the LangGraph workflow (triage → investigator → decision)
     4. Returns the final state with the decision and full audit trail
     
     Args:
-        request: DisputeProcessRequest containing ticket_id and customer_query
+        request: DisputeProcessRequest containing transaction_id, customer_id, and customer_query
         db: Database session
         
     Returns:
@@ -625,34 +627,33 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
         - final_decision: auto_approved, auto_rejected, or human_review_required
         
     Raises:
-        HTTPException: If ticket not found or processing fails
+        HTTPException: If processing fails
     """
     try:
-        # Retrieve the dispute ticket from the database
-        ticket = db.query(models.DisputeTicket).filter(
-            models.DisputeTicket.id == request.ticket_id
-        ).first()
+        # Create a new dispute ticket
+        new_ticket = models.DisputeTicket(
+            transaction_id=request.transaction_id,
+            customer_id=request.customer_id,
+            dispute_reason=request.customer_query,
+            status='under_investigation'
+        )
         
-        if not ticket:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Dispute ticket with ID {request.ticket_id} not found"
-            )
-        
-        # Narrow ORM attribute type for static type checkers
-        customer_id = cast(int, ticket.customer_id)
+        db.add(new_ticket)
+        db.commit()
+        db.refresh(new_ticket)
         
         print(f"\n{'='*80}")
-        print(f"🚀 PROCESSING DISPUTE TICKET #{request.ticket_id}")
+        print(f"🚀 PROCESSING DISPUTE TICKET #{new_ticket.id}")
         print(f"{'='*80}")
-        print(f"Customer ID: {customer_id}")
+        print(f"Customer ID: {request.customer_id}")
+        print(f"Transaction ID: {request.transaction_id}")
         print(f"Query: {request.customer_query}")
         print(f"{'='*80}")
         
         # Initialize the dispute state
         initial_state = initialize_dispute_state(
-            ticket_id=request.ticket_id,
-            customer_id=customer_id,
+            ticket_id=cast(int, new_ticket.id),
+            customer_id=request.customer_id,
             customer_query=request.customer_query,
             dispute_category="unknown"
         )

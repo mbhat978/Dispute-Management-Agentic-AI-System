@@ -242,7 +242,7 @@ export default function TicketDetailPage() {
       <div className="flex flex-col justify-center items-center min-h-screen space-y-4">
         <AlertCircle className="h-16 w-16 text-red-500" />
         <p className="text-red-500 text-lg font-semibold">Error: {error || "Ticket not found"}</p>
-        <Link href="/">
+        <Link href="/employee">
           <Button variant="outline">
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Dashboard
@@ -260,7 +260,7 @@ export default function TicketDetailPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
-          <Link href="/">
+          <Link href="/employee">
             <Button variant="ghost" size="sm">
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back to Dashboard

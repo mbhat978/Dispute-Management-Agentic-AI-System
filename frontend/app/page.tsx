@@ -1,203 +1,100 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 
-// Define the Dispute type based on our API response
-interface Dispute {
-  id: number;
-  customer_name: string;
-  customer_id: number;
-  dispute_reason: string;
-  status: string;
-  amount: number;
-  created_at: string | null;
-}
+export default function LoginPage() {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const router = useRouter();
 
-// Function to get badge variant and color based on status
-function getStatusBadge(status: string) {
-  switch (status) {
-    case "auto_approved":
-      return { variant: "default" as const, className: "bg-green-500 hover:bg-green-600" };
-    case "auto_rejected":
-      return { variant: "destructive" as const, className: "" };
-    case "human_review_required":
-      return { variant: "secondary" as const, className: "bg-yellow-500 hover:bg-yellow-600 text-black" };
-    case "pending":
-      return { variant: "outline" as const, className: "" };
-    default:
-      return { variant: "outline" as const, className: "" };
-  }
-}
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setIsLoading(true);
 
-// Function to format status text
-function formatStatus(status: string): string {
-  return status
-    .split("_")
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-}
+    // Simulate a brief loading state for better UX
+    await new Promise(resolve => setTimeout(resolve, 500));
 
-export default function DashboardPage() {
-  const [disputes, setDisputes] = useState<Dispute[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    async function fetchDisputes() {
-      try {
-        const response = await fetch("http://localhost:8000/api/disputes");
-        
-        if (!response.ok) {
-          throw new Error(`Failed to fetch disputes: ${response.statusText}`);
-        }
-        
-        const data = await response.json();
-        setDisputes(data.disputes || []);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "An error occurred");
-        console.error("Error fetching disputes:", err);
-      } finally {
-        setLoading(false);
-      }
+    // Mock authentication logic
+    if (username === "admin" && password === "admin123") {
+      router.push("/employee");
+    } else if (username === "customer" && password === "customer123") {
+      router.push("/customer");
+    } else {
+      setError("Invalid username or password. Please try again.");
+      setIsLoading(false);
     }
-
-    fetchDisputes();
-  }, []);
+  };
 
   return (
-    <div className="space-y-6">
-      {/* Page Header */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Dispute Dashboard</h1>
-        <p className="text-muted-foreground mt-2">
-          View and manage all banking dispute tickets
-        </p>
-      </div>
-
-      {/* Main Content Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle>All Disputes</CardTitle>
-          <CardDescription>
-            A comprehensive list of all dispute tickets with their current status
+    <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
+      <Card className="w-full max-w-md">
+        <CardHeader className="space-y-1">
+          <CardTitle className="text-2xl font-bold text-center">
+            Welcome Back
+          </CardTitle>
+          <CardDescription className="text-center">
+            Sign in to access the Dispute Resolution Center
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {loading && (
-            <div className="flex justify-center items-center py-8">
-              <p className="text-muted-foreground">Loading disputes...</p>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="username">Username</Label>
+              <Input
+                id="username"
+                type="text"
+                placeholder="Enter your username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                required
+                disabled={isLoading}
+              />
             </div>
-          )}
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="Enter your password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                disabled={isLoading}
+              />
+            </div>
+            
+            {error && (
+              <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md">
+                {error}
+              </div>
+            )}
 
-          {error && (
-            <div className="flex justify-center items-center py-8">
-              <p className="text-red-500">Error: {error}</p>
-            </div>
-          )}
+            <Button 
+              type="submit" 
+              className="w-full" 
+              disabled={isLoading}
+            >
+              {isLoading ? "Signing in..." : "Sign In"}
+            </Button>
 
-          {!loading && !error && disputes.length === 0 && (
-            <div className="flex justify-center items-center py-8">
-              <p className="text-muted-foreground">No disputes found</p>
+            <div className="mt-4 p-3 text-xs text-muted-foreground bg-muted rounded-md">
+              <p className="font-semibold mb-1">Demo Credentials:</p>
+              <p>Employee: admin / admin123</p>
+              <p>Customer: customer / customer123</p>
             </div>
-          )}
-
-          {!loading && !error && disputes.length > 0 && (
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[100px]">Ticket ID</TableHead>
-                    <TableHead>Customer Name</TableHead>
-                    <TableHead>Dispute Reason</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {disputes.map((dispute) => {
-                    const statusBadge = getStatusBadge(dispute.status);
-                    return (
-                      <TableRow key={dispute.id}>
-                        <TableCell className="font-medium">#{dispute.id}</TableCell>
-                        <TableCell>{dispute.customer_name}</TableCell>
-                        <TableCell className="max-w-md truncate">
-                          {dispute.dispute_reason}
-                        </TableCell>
-                        <TableCell>${dispute.amount.toFixed(2)}</TableCell>
-                        <TableCell>
-                          <Badge 
-                            variant={statusBadge.variant}
-                            className={statusBadge.className}
-                          >
-                            {formatStatus(dispute.status)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Link href={`/ticket/${dispute.id}`}>
-                            <Button variant="outline" size="sm">
-                              View Details
-                            </Button>
-                          </Link>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+          </form>
         </CardContent>
       </Card>
-
-      {/* Summary Stats */}
-      {!loading && !error && disputes.length > 0 && (
-        <div className="grid gap-4 md:grid-cols-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium">Total Disputes</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{disputes.length}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium">Auto Approved</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">
-                {disputes.filter(d => d.status === "auto_approved").length}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium">Auto Rejected</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-600">
-                {disputes.filter(d => d.status === "auto_rejected").length}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium">Needs Review</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-yellow-600">
-                {disputes.filter(d => d.status === "human_review_required").length}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
     </div>
   );
 }
+
+// Made with Bob
