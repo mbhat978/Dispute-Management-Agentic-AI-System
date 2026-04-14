@@ -197,10 +197,14 @@ def _build_investigation_plan(
         return fallback_plan, "rule_based_fallback"
 
     try:
+        # Initialize LLM with custom http_client to avoid proxies parameter issue
+        import httpx
+        http_client = httpx.Client()
         llm = ChatOpenAI(
             model=INVESTIGATOR_MODEL,
             temperature=INVESTIGATOR_TEMPERATURE,
-            api_key=SecretStr(OPENAI_API_KEY)
+            api_key=SecretStr(OPENAI_API_KEY),
+            http_client=http_client
         )
         
         # Enhanced prompt with reasoning requirements

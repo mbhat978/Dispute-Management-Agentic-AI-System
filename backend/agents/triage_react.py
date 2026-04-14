@@ -54,11 +54,14 @@ def triage_node_react(state: DisputeState) -> Dict[str, Any]:
         return triage_node(state)
     
     try:
-        # Initialize LLM
+        # Initialize LLM with custom http_client to avoid proxies parameter issue
+        import httpx
+        http_client = httpx.Client()
         llm = ChatOpenAI(
             model=TRIAGE_MODEL,
             temperature=TRIAGE_TEMPERATURE,
-            api_key=SecretStr(OPENAI_API_KEY)
+            api_key=SecretStr(OPENAI_API_KEY),
+            http_client=http_client
         )
         
         # Create prompt template

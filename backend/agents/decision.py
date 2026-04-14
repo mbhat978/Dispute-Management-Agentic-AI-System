@@ -241,10 +241,14 @@ def _generate_decision_reasoning(state: DisputeState) -> Dict[str, Any]:
         return fallback
 
     try:
+        # Initialize LLM with custom http_client to avoid proxies parameter issue
+        import httpx
+        http_client = httpx.Client()
         llm = ChatOpenAI(
             model=DECISION_MODEL,
             temperature=DECISION_TEMPERATURE,
-            api_key=SecretStr(OPENAI_API_KEY)
+            api_key=SecretStr(OPENAI_API_KEY),
+            http_client=http_client
         )
         
         # Enhanced prompt with comprehensive business rules and reasoning requirements
