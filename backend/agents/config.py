@@ -20,9 +20,9 @@ load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 # Model selection based on task complexity
-MODEL_GPT4 = "gpt-4"
-MODEL_GPT35 = "gpt-3.5-turbo"
-MODEL_GPT4_TURBO = "gpt-4-turbo-preview"
+MODEL_GPT4 = "gpt-4o" #"gpt-4"
+MODEL_GPT35 = "gpt-3.5-turbo" #"gpt-3.5-turbo"
+MODEL_GPT4_TURBO: Any = "gpt-4o" #"gpt-4-turbo-preview"
 
 # Default models for each agent
 TRIAGE_MODEL = MODEL_GPT35  # Simple classification task

@@ -38,6 +38,27 @@ interface ProcessDisputeResponse {
 
 const API_BASE_URL = "http://localhost:8000";
 
+interface ApiErrorResponse {
+  status?: string;
+  error?: {
+    code?: string;
+    message?: string;
+    details?: Record<string, unknown>;
+  };
+  detail?: string | ApiErrorResponse;
+}
+
+function getErrorMessage(errorData: ApiErrorResponse | null | undefined, fallback: string): string {
+  if (!errorData) return fallback;
+  if (typeof errorData.detail === "string") return errorData.detail;
+  if (typeof errorData.error?.message === "string") return errorData.error.message;
+  if (typeof errorData.detail === "object" && errorData.detail && "error" in errorData.detail) {
+    const nested = errorData.detail as ApiErrorResponse;
+    if (typeof nested.error?.message === "string") return nested.error.message;
+  }
+  return fallback;
+}
+
 function formatDecisionMessage(decision: string): string {
   switch (decision) {
     case "auto_approved":
@@ -70,7 +91,10 @@ export default function CustomerPortalPage() {
         setCustomersLoading(true);
         setError(null);
         const response = await fetch(`${API_BASE_URL}/api/customers`);
-        if (!response.ok) throw new Error(`Failed to fetch customers: ${response.statusText}`);
+        if (!response.ok) {
+          const errorData: ApiErrorResponse = await response.json().catch(() => ({}));
+          throw new Error(getErrorMessage(errorData, `Failed to fetch customers: ${response.statusText}`));
+        }
         const data = await response.json();
         setCustomers(data.customers ?? []);
       } catch (err) {
@@ -95,7 +119,10 @@ export default function CustomerPortalPage() {
         setError(null);
         setSelectedTransactionId("");
         const response = await fetch(`${API_BASE_URL}/api/customers/${selectedCustomerId}/transactions`);
-        if (!response.ok) throw new Error(`Failed to fetch transactions: ${response.statusText}`);
+        if (!response.ok) {
+          const errorData: ApiErrorResponse = await response.json().catch(() => ({}));
+          throw new Error(getErrorMessage(errorData, `Failed to fetch transactions: ${response.statusText}`));
+        }
         const data = await response.json();
         setTransactions(data.transactions ?? []);
       } catch (err) {
@@ -144,8 +171,8 @@ export default function CustomerPortalPage() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `Failed to process dispute: ${response.statusText}`);
+        const errorData: ApiErrorResponse = await response.json().catch(() => ({}));
+        throw new Error(getErrorMessage(errorData, `Failed to process dispute: ${response.statusText}`));
       }
 
       const data: ProcessDisputeResponse = await response.json();

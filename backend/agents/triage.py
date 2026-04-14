@@ -6,7 +6,7 @@ and categorizes disputes into predefined categories.
 """
 
 from typing import Dict, Any
-import os
+import logging
 from .state import DisputeState
 
 
@@ -23,6 +23,9 @@ DISPUTE_CATEGORIES = {
 }
 
 
+logger = logging.getLogger("dispute_management.agents.triage.rule_based")
+
+
 def triage_node(state: DisputeState) -> Dict[str, Any]:
     """
     Triage Agent: Analyzes the customer query and categorizes the dispute.
@@ -36,7 +39,12 @@ def triage_node(state: DisputeState) -> Dict[str, Any]:
     Returns:
         Dict with updated dispute_category and audit_trail
     """
-    print("\n[TRIAGE AGENT] Analyzing customer query...")
+    logger.info(
+        "[TRIAGE AGENT - RULE BASED] start | ticket_id=%s | customer_id=%s | query=%s",
+        state.get("ticket_id"),
+        state.get("customer_id"),
+        state.get("customer_query"),
+    )
     
     customer_query = state["customer_query"]
     
@@ -64,8 +72,11 @@ def triage_node(state: DisputeState) -> Dict[str, Any]:
         # Update state
         audit_entry = f"Triage Agent: Categorized dispute as '{category}' - {DISPUTE_CATEGORIES.get(category, 'Unknown category')}"
         
-        print(f"  [OK] Category determined: {category}")
-        print(f"  [OK] Audit entry: {audit_entry}")
+        logger.info(
+            "[TRIAGE AGENT - RULE BASED] result | category=%s | audit_entry=%s",
+            category,
+            audit_entry,
+        )
         
         return {
             "dispute_category": category,
@@ -73,7 +84,7 @@ def triage_node(state: DisputeState) -> Dict[str, Any]:
         }
         
     except Exception as e:
-        print(f"  [ERROR] Error in triage: {str(e)}")
+        logger.error("Error in rule-based triage: %s", str(e), exc_info=True)
         audit_entry = f"Triage Agent: Error during categorization - {str(e)}"
         return {
             "dispute_category": "unknown",

@@ -8,6 +8,7 @@ LLM-guided reasoning with hard business-rule validation and execution safety.
 from typing import Dict, Any, Tuple
 from datetime import datetime
 import json
+import logging
 from pydantic import SecretStr
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
@@ -24,11 +25,19 @@ from .config import (
 )
 
 
+logger = logging.getLogger("dispute_management.agents.decision")
+
+
 def decision_node(state: DisputeState) -> Dict[str, Any]:
     """
     Decision Agent: Makes the final decision based on gathered evidence.
     """
-    print("\n[DECISION AGENT] Making final decision...")
+    logger.info(
+        "[DECISION AGENT] start | ticket_id=%s | customer_id=%s | category=%s",
+        state.get("ticket_id"),
+        state.get("customer_id"),
+        state.get("dispute_category"),
+    )
 
     category = state["dispute_category"]
     ticket_id = state["ticket_id"]
@@ -105,7 +114,13 @@ RECOMMENDED ACTIONS:
 RULE VALIDATION:
 {rule_reason or "No rule override required"}"""
         audit_trail.append(decision_entry)
-        print(f"  [DECISION] {final_decision.upper()}")
+        logger.info(
+            "[DECISION AGENT] decision=%s | proposed=%s | confidence=%.2f | rule_reason=%s",
+            final_decision.upper(),
+            proposed_decision,
+            llm_confidence,
+            rule_reason or "none",
+        )
 
         ticket = db.query(models.DisputeTicket).filter(
             models.DisputeTicket.id == ticket_id
@@ -116,7 +131,7 @@ RULE VALIDATION:
             ticket.resolution_notes = justification  # type: ignore[assignment]
             ticket.updated_at = datetime.utcnow()  # type: ignore[assignment]
             db.commit()
-            print(f"  [OK] Updated DisputeTicket #{ticket_id} status to: {ticket.status}")
+            logger.info("[DECISION AGENT] ticket_updated | ticket_id=%s | status=%s", ticket_id, ticket.status)
 
         for entry in audit_trail:
             if "THOUGHT:" in entry or "Triage Agent" in entry or "Clarification Agent" in entry or "Orchestrator:" in entry:
@@ -145,7 +160,7 @@ RULE VALIDATION:
             db.add(audit_log)
 
         db.commit()
-        print(f"  [OK] Saved {len(audit_trail)} audit log entries to database")
+        logger.info("[DECISION AGENT] audit_logs_saved | count=%s", len(audit_trail))
 
         decision_memory = agent_memories.get(
             "decision",
@@ -171,7 +186,7 @@ RULE VALIDATION:
         working_memory["last_decision"] = final_decision
         working_memory["last_decision_timestamp"] = datetime.utcnow().isoformat()
 
-        print(f"  [SUCCESS] Final decision: {final_decision.upper()}")
+        logger.info("[DECISION AGENT] complete | final_decision=%s", final_decision.upper())
 
         return {
             "final_decision": final_decision,
@@ -186,7 +201,7 @@ RULE VALIDATION:
         }
 
     except Exception as e:
-        print(f"  [ERROR] Error during decision making: {str(e)}")
+        logger.error("Error during decision making: %s", str(e), exc_info=True)
         audit_entry = f"Decision Agent ERROR: {str(e)}"
         audit_trail.append(audit_entry)
         return {
@@ -222,7 +237,7 @@ def _generate_decision_reasoning(state: DisputeState) -> Dict[str, Any]:
 
     fallback = _rule_based_reasoning(state)
     if not OPENAI_API_KEY:
-        print("  [INFO] No OpenAI API key, using rule-based decision")
+        logger.info("No OpenAI API key, using rule-based decision")
         return fallback
 
     try:
@@ -314,7 +329,7 @@ GATHERED EVIDENCE:
 Provide your comprehensive analysis and decision:""")
         ])
 
-        print(f"  [LLM] Calling {DECISION_MODEL} for decision reasoning...")
+        logger.info("[DECISION AGENT] action=invoke_llm_reasoner | model=%s", DECISION_MODEL)
         response = llm.invoke(prompt.format_messages(
             category=category,
             query=query,
@@ -338,7 +353,7 @@ Provide your comprehensive analysis and decision:""")
         # Validate decision value
         decision = parsed.get("decision", "human_review_required")
         if decision not in {"auto_approved", "auto_rejected", "human_review_required"}:
-            print(f"  [WARNING] Invalid decision '{decision}' from LLM, using fallback")
+            logger.warning("Invalid decision '%s' from LLM, using fallback", decision)
             return fallback
         
         # Ensure all required fields exist
@@ -349,16 +364,20 @@ Provide your comprehensive analysis and decision:""")
         parsed.setdefault("risk_factors", [])
         parsed.setdefault("recommended_actions", [])
         
-        print(f"  [LLM] Decision: {decision} (confidence: {parsed.get('confidence', 0.5):.2f})")
-        print(f"  [LLM] Risk factors: {len(parsed.get('risk_factors', []))}")
+        logger.info(
+            "[DECISION AGENT] llm_result | decision=%s | confidence=%.2f | risk_factors=%s",
+            decision,
+            parsed.get("confidence", 0.5),
+            len(parsed.get("risk_factors", [])),
+        )
         
         return parsed
 
     except json.JSONDecodeError as e:
-        print(f"  [ERROR] Failed to parse LLM decision response: {str(e)}")
+        logger.error("Failed to parse LLM decision response: %s", str(e), exc_info=True)
         return fallback
     except Exception as e:
-        print(f"  [ERROR] LLM decision reasoning failed: {str(e)}")
+        logger.error("LLM decision reasoning failed: %s", str(e), exc_info=True)
         return fallback
 
 

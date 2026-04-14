@@ -7,6 +7,7 @@ dynamic ReAct-style tool plan with optional LLM guidance and rule-based fallback
 
 from typing import Dict, Any, List, Tuple
 import json
+import logging
 from datetime import datetime
 from pydantic import SecretStr
 from langchain_openai import ChatOpenAI
@@ -18,11 +19,20 @@ from .state import DisputeState
 from .config import OPENAI_API_KEY, INVESTIGATOR_MODEL, INVESTIGATOR_TEMPERATURE
 
 
+logger = logging.getLogger("dispute_management.agents.investigator")
+
+
 def investigator_node(state: DisputeState) -> Dict[str, Any]:
     """
     Investigator Agent: Gathers evidence using dynamic tool selection.
     """
-    print("\n[INVESTIGATOR AGENT] Gathering evidence...")
+    logger.info(
+        "[INVESTIGATOR AGENT] start | ticket_id=%s | customer_id=%s | category=%s | iteration=%s",
+        state.get("ticket_id"),
+        state.get("customer_id"),
+        state.get("dispute_category"),
+        state.get("iteration_count", 0),
+    )
 
     category = state["dispute_category"]
     ticket_id = state["ticket_id"]
@@ -60,6 +70,11 @@ def investigator_node(state: DisputeState) -> Dict[str, Any]:
             prior_gathered_data=gathered_data,
         )
 
+        logger.info(
+            "[INVESTIGATOR AGENT] plan_created | planner_mode=%s | steps=%s",
+            planner_mode,
+            [step["tool"] for step in plan],
+        )
         audit_trail.append(
             f"Investigator Agent THOUGHT: Built investigation plan using {planner_mode}. "
             f"Planned steps: {[step['tool'] for step in plan]}"
@@ -71,6 +86,11 @@ def investigator_node(state: DisputeState) -> Dict[str, Any]:
             tool_input = step["input"]
             data_key = step["data_key"]
 
+            logger.info(
+                "[INVESTIGATOR AGENT] action=tool_call | tool=%s | input=%s",
+                tool_name,
+                json.dumps(tool_input, default=str),
+            )
             audit_trail.append(
                 f"Investigator Agent ACTION: Calling {tool_name} with input {json.dumps(tool_input, default=str)}"
             )
@@ -79,6 +99,11 @@ def investigator_node(state: DisputeState) -> Dict[str, Any]:
             gathered_data[data_key] = observation
             executed_steps.append(tool_name)
 
+            logger.info(
+                "[INVESTIGATOR AGENT] observation | tool=%s | output=%s",
+                tool_name,
+                json.dumps(observation, default=str),
+            )
             audit_trail.append(
                 f"Investigator Agent OBSERVATION: {tool_name} returned {json.dumps(observation, default=str)}"
             )
@@ -115,7 +140,12 @@ def investigator_node(state: DisputeState) -> Dict[str, Any]:
         investigator_memory["confidence_history"].append(investigation_confidence)
         agent_memories["investigator"] = investigator_memory
 
-        print(f"  [OK] Investigation complete. Gathered {len(gathered_data)} data points.")
+        logger.info(
+            "[INVESTIGATOR AGENT] complete | gathered_data_points=%s | confidence=%.2f | quality=%.2f",
+            len(gathered_data),
+            investigation_confidence,
+            evidence_quality_score,
+        )
 
         return {
             "gathered_data": gathered_data,
@@ -128,7 +158,7 @@ def investigator_node(state: DisputeState) -> Dict[str, Any]:
         }
 
     except Exception as e:
-        print(f"  [ERROR] Error during investigation: {str(e)}")
+        logger.error("Error during investigation: %s", str(e), exc_info=True)
         audit_trail.append(f"Investigator Agent ERROR: {str(e)}")
         return {
             "gathered_data": gathered_data,
@@ -163,7 +193,7 @@ def _build_investigation_plan(
     fallback_plan = _rule_based_plan(category, customer_id, transaction_id, prior_gathered_data)
 
     if not OPENAI_API_KEY:
-        print("  [INFO] No OpenAI API key, using rule-based planning")
+        logger.info("No OpenAI API key, using rule-based planning")
         return fallback_plan, "rule_based_fallback"
 
     try:
@@ -234,7 +264,7 @@ CONTEXT:
 Create an intelligent investigation plan with reasoning:""")
         ])
 
-        print(f"  [LLM] Calling {INVESTIGATOR_MODEL} for investigation planning...")
+        logger.info("[INVESTIGATOR AGENT] action=invoke_llm_planner | model=%s", INVESTIGATOR_MODEL)
         response = llm.invoke(prompt.format_messages(
             category=category,
             customer_id=customer_id,
@@ -259,24 +289,24 @@ Create an intelligent investigation plan with reasoning:""")
         expected_evidence = parsed.get("expected_evidence", [])
         plan_confidence = parsed.get("confidence", 0.8)
         
-        print(f"  [LLM] Plan reasoning: {reasoning[:100]}...")
-        print(f"  [LLM] Planned {len(steps)} investigation steps")
+        logger.info("[INVESTIGATOR AGENT] llm_plan_reasoning=%s...", reasoning[:100])
+        logger.info("[INVESTIGATOR AGENT] llm_planned_steps=%s", len(steps))
         
         # Sanitize and validate the plan
         sanitized = _sanitize_plan(steps, customer_id, transaction_id, prior_gathered_data)
         
         if sanitized:
-            print(f"  [OK] Using LLM investigation plan with {len(sanitized)} steps")
+            logger.info("Using LLM investigation plan with %s steps", len(sanitized))
             return sanitized, "llm_planner"
         else:
-            print(f"  [WARNING] LLM plan validation failed, using fallback")
+            logger.warning("LLM plan validation failed, using fallback")
             return fallback_plan, "llm_planner_failed_validation"
 
     except json.JSONDecodeError as e:
-        print(f"  [ERROR] Failed to parse LLM response: {str(e)}")
+        logger.error("Failed to parse LLM response: %s", str(e), exc_info=True)
         return fallback_plan, "llm_planner_json_error"
     except Exception as e:
-        print(f"  [ERROR] LLM planning failed: {str(e)}")
+        logger.error("LLM planning failed: %s", str(e), exc_info=True)
         return fallback_plan, "llm_planner_error"
 
 

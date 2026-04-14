@@ -1,11 +1,14 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import datetime
-from typing import cast
+from typing import cast, Any, Optional
 from dotenv import load_dotenv
 import os
+import logging
+import traceback
 
 # Load environment variables from .env file
 load_dotenv()
@@ -14,6 +17,13 @@ from database import engine, get_db, Base
 import models
 from agents.state import DisputeState, initialize_dispute_state
 from agents.orchestrator import dispute_resolution_workflow
+
+# Configure application logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+)
+logger = logging.getLogger("dispute_management")
 
 # Create all tables in the database
 Base.metadata.create_all(bind=engine)
@@ -35,15 +45,56 @@ app.add_middleware(
 )
 
 
+def build_error_response(
+    message: str,
+    *,
+    code: str,
+    details: Optional[Any] = None,
+    ticket_id: Optional[int] = None,
+) -> dict[str, Any]:
+    response: dict[str, Any] = {
+        "status": "error",
+        "error": {
+            "code": code,
+            "message": message,
+        },
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+    if details is not None:
+        response["error"]["details"] = details
+    if ticket_id is not None:
+        response["ticket_id"] = ticket_id
+    return response
+
+
+def raise_api_error(
+    status_code: int,
+    message: str,
+    *,
+    code: str,
+    details: Optional[Any] = None,
+    ticket_id: Optional[int] = None,
+) -> None:
+    raise HTTPException(
+        status_code=status_code,
+        detail=build_error_response(
+            message,
+            code=code,
+            details=details,
+            ticket_id=ticket_id,
+        ),
+    )
+
+
 @app.on_event("startup")
 async def startup_event():
     """
     Event handler that runs on application startup.
     Creates database tables if they don't exist.
     """
-    print("Creating database tables...")
+    logger.info("Creating database tables...")
     Base.metadata.create_all(bind=engine)
-    print("Database tables created successfully!")
+    logger.info("Database tables created successfully!")
 
 
 @app.get("/")
@@ -64,6 +115,52 @@ async def health_check():
     Health check endpoint.
     """
     return {"status": "healthy"}
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    detail = exc.detail
+    if isinstance(detail, dict) and detail.get("status") == "error":
+        logger.warning(
+            "HTTPException | path=%s | status=%s | code=%s | message=%s",
+            request.url.path,
+            exc.status_code,
+            detail.get("error", {}).get("code"),
+            detail.get("error", {}).get("message"),
+        )
+        return JSONResponse(status_code=exc.status_code, content=detail)
+
+    message = detail if isinstance(detail, str) else "Request failed"
+    error_payload = build_error_response(
+        message,
+        code="HTTP_ERROR",
+        details={"path": request.url.path},
+    )
+    logger.warning(
+        "HTTPException | path=%s | status=%s | message=%s",
+        request.url.path,
+        exc.status_code,
+        message,
+    )
+    return JSONResponse(status_code=exc.status_code, content=error_payload)
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.error(
+        "Unhandled exception | path=%s | error=%s\n%s",
+        request.url.path,
+        str(exc),
+        traceback.format_exc(),
+    )
+    return JSONResponse(
+        status_code=500,
+        content=build_error_response(
+            "An unexpected server error occurred. Please try again or contact support.",
+            code="INTERNAL_SERVER_ERROR",
+            details={"path": request.url.path},
+        ),
+    )
 
 
 # Example endpoint to test database connection
@@ -116,10 +213,12 @@ async def get_customers(db: Session = Depends(get_db)):
             ],
         }
     except Exception as e:
-        print(f"\n[ERROR] Error fetching customers: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error fetching customers: {str(e)}"
+        logger.error("Error fetching customers: %s", str(e), exc_info=True)
+        raise_api_error(
+            500,
+            "Unable to load customers.",
+            code="CUSTOMERS_FETCH_FAILED",
+            details={"reason": str(e)},
         )
 
 
@@ -134,10 +233,13 @@ async def get_customer_transactions(customer_id: int, db: Session = Depends(get_
         ).first()
 
         if not customer:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Customer with ID {customer_id} not found"
+            raise_api_error(
+                404,
+                f"Customer with ID {customer_id} not found.",
+                code="CUSTOMER_NOT_FOUND",
+                details={"customer_id": customer_id},
             )
+        customer = cast(models.Customer, customer)
 
         transactions = db.query(models.Transaction).filter(
             models.Transaction.customer_id == customer_id
@@ -166,10 +268,12 @@ async def get_customer_transactions(customer_id: int, db: Session = Depends(get_
     except HTTPException:
         raise
     except Exception as e:
-        print(f"\n[ERROR] Error fetching customer transactions: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error fetching customer transactions: {str(e)}"
+        logger.error("Error fetching customer transactions: %s", str(e), exc_info=True)
+        raise_api_error(
+            500,
+            "Unable to load customer transactions.",
+            code="CUSTOMER_TRANSACTIONS_FETCH_FAILED",
+            details={"customer_id": customer_id, "reason": str(e)},
         )
 
 
@@ -209,10 +313,12 @@ async def get_all_disputes(db: Session = Depends(get_db)):
         }
         
     except Exception as e:
-        print(f"\n[ERROR] Error fetching disputes: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error fetching disputes: {str(e)}"
+        logger.error("Error fetching disputes: %s", str(e), exc_info=True)
+        raise_api_error(
+            500,
+            "Unable to load disputes.",
+            code="DISPUTES_FETCH_FAILED",
+            details={"reason": str(e)},
         )
 
 
@@ -249,10 +355,14 @@ async def get_dispute_by_id(ticket_id: int, db: Session = Depends(get_db)):
         ).first()
         
         if not dispute:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Dispute ticket with ID {ticket_id} not found"
+            raise_api_error(
+                404,
+                f"Dispute ticket with ID {ticket_id} not found.",
+                code="DISPUTE_NOT_FOUND",
+                details={"ticket_id": ticket_id},
+                ticket_id=ticket_id,
             )
+        dispute = cast(models.DisputeTicket, dispute)
         
         # Get customer details
         customer = db.query(models.Customer).filter(
@@ -260,10 +370,14 @@ async def get_dispute_by_id(ticket_id: int, db: Session = Depends(get_db)):
         ).first()
         
         if not customer:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Customer not found for dispute ticket {ticket_id}"
+            raise_api_error(
+                404,
+                f"Customer not found for dispute ticket {ticket_id}.",
+                code="DISPUTE_CUSTOMER_NOT_FOUND",
+                details={"ticket_id": ticket_id},
+                ticket_id=ticket_id,
             )
+        customer = cast(models.Customer, customer)
         
         # Get transaction details
         transaction = db.query(models.Transaction).filter(
@@ -271,10 +385,14 @@ async def get_dispute_by_id(ticket_id: int, db: Session = Depends(get_db)):
         ).first()
         
         if not transaction:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Transaction not found for dispute ticket {ticket_id}"
+            raise_api_error(
+                404,
+                f"Transaction not found for dispute ticket {ticket_id}.",
+                code="DISPUTE_TRANSACTION_NOT_FOUND",
+                details={"ticket_id": ticket_id},
+                ticket_id=ticket_id,
             )
+        transaction = cast(models.Transaction, transaction)
         
         # Get audit logs ordered by timestamp
         audit_logs = db.query(models.AuditLog).filter(
@@ -320,10 +438,13 @@ async def get_dispute_by_id(ticket_id: int, db: Session = Depends(get_db)):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"\n[ERROR] Error fetching dispute details: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error fetching dispute details: {str(e)}"
+        logger.error("Error fetching dispute details: %s", str(e), exc_info=True)
+        raise_api_error(
+            500,
+            "Unable to load dispute details.",
+            code="DISPUTE_DETAILS_FETCH_FAILED",
+            details={"ticket_id": ticket_id, "reason": str(e)},
+            ticket_id=ticket_id,
         )
 
 
@@ -384,10 +505,13 @@ async def approve_dispute(ticket_id: int, db: Session = Depends(get_db)):
         raise
     except Exception as e:
         db.rollback()
-        print(f"\n[ERROR] Error approving dispute: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error approving dispute: {str(e)}"
+        logger.error("Error approving dispute: %s", str(e), exc_info=True)
+        raise_api_error(
+            500,
+            "Unable to approve dispute.",
+            code="DISPUTE_APPROVE_FAILED",
+            details={"ticket_id": ticket_id, "reason": str(e)},
+            ticket_id=ticket_id,
         )
 
 
@@ -448,10 +572,13 @@ async def reject_dispute(ticket_id: int, db: Session = Depends(get_db)):
         raise
     except Exception as e:
         db.rollback()
-        print(f"\n[ERROR] Error rejecting dispute: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error rejecting dispute: {str(e)}"
+        logger.error("Error rejecting dispute: %s", str(e), exc_info=True)
+        raise_api_error(
+            500,
+            "Unable to reject dispute.",
+            code="DISPUTE_REJECT_FAILED",
+            details={"ticket_id": ticket_id, "reason": str(e)},
+            ticket_id=ticket_id,
         )
 
 
@@ -503,9 +630,12 @@ async def resolve_dispute(
         # Validate resolution status
         valid_statuses = ['resolved_approved', 'resolved_rejected']
         if request.resolution_status not in valid_statuses:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid resolution_status. Must be one of: {valid_statuses}"
+            raise_api_error(
+                400,
+                f"Invalid resolution_status. Must be one of: {valid_statuses}",
+                code="INVALID_RESOLUTION_STATUS",
+                details={"allowed_values": valid_statuses},
+                ticket_id=ticket_id,
             )
         
         # Get the dispute ticket
@@ -514,17 +644,21 @@ async def resolve_dispute(
         ).first()
         
         if not dispute:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Dispute ticket with ID {ticket_id} not found"
+            raise_api_error(
+                404,
+                f"Dispute ticket with ID {ticket_id} not found.",
+                code="DISPUTE_NOT_FOUND",
+                details={"ticket_id": ticket_id},
+                ticket_id=ticket_id,
             )
+        dispute = cast(models.DisputeTicket, dispute)
         
-        print(f"\n{'='*80}")
-        print(f"[HUMAN RESOLUTION] - TICKET #{ticket_id}")
-        print(f"{'='*80}")
-        print(f"Resolution Status: {request.resolution_status}")
-        print(f"Human Notes: {request.human_notes[:100]}...")
-        print(f"{'='*80}")
+        logger.info("=" * 80)
+        logger.info("[HUMAN RESOLUTION] - TICKET #%s", ticket_id)
+        logger.info("=" * 80)
+        logger.info("Resolution Status: %s", request.resolution_status)
+        logger.info("Human Notes: %s...", request.human_notes[:100])
+        logger.info("=" * 80)
         
         # Update the ticket status
         old_status = dispute.status
@@ -560,10 +694,10 @@ their judgment to override or confirm the AI recommendation."""
         db.commit()
         db.refresh(dispute)
         
-        print(f"\n[SUCCESS] RESOLUTION COMPLETE")
-        print(f"   Ticket #{ticket_id} status updated to: {request.resolution_status}")
-        print(f"   Audit log entry created")
-        print(f"{'='*80}\n")
+        logger.info("[SUCCESS] RESOLUTION COMPLETE")
+        logger.info("Ticket #%s status updated to: %s", ticket_id, request.resolution_status)
+        logger.info("Audit log entry created")
+        logger.info("%s", "=" * 80)
         
         return {
             "status": "success",
@@ -579,10 +713,13 @@ their judgment to override or confirm the AI recommendation."""
         raise
     except Exception as e:
         db.rollback()
-        print(f"\n[ERROR] Error resolving dispute: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error resolving dispute: {str(e)}"
+        logger.error("Error resolving dispute: %s", str(e), exc_info=True)
+        raise_api_error(
+            500,
+            "Unable to resolve dispute.",
+            code="DISPUTE_RESOLVE_FAILED",
+            details={"ticket_id": ticket_id, "reason": str(e)},
+            ticket_id=ticket_id,
         )
 
 
@@ -636,6 +773,8 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
     Raises:
         HTTPException: If processing fails
     """
+    new_ticket: Optional[models.DisputeTicket] = None
+
     try:
         # Create a new dispute ticket
         new_ticket = models.DisputeTicket(
@@ -649,13 +788,13 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
         db.commit()
         db.refresh(new_ticket)
         
-        print(f"\n{'='*80}")
-        print(f"[PROCESSING] DISPUTE TICKET #{new_ticket.id}")
-        print(f"{'='*80}")
-        print(f"Customer ID: {request.customer_id}")
-        print(f"Transaction ID: {request.transaction_id}")
-        print(f"Query: {request.customer_query}")
-        print(f"{'='*80}")
+        logger.info("%s", "=" * 80)
+        logger.info("[PROCESSING] DISPUTE TICKET #%s", new_ticket.id)
+        logger.info("%s", "=" * 80)
+        logger.info("Customer ID: %s", request.customer_id)
+        logger.info("Transaction ID: %s", request.transaction_id)
+        logger.info("Query: %s", request.customer_query)
+        logger.info("%s", "=" * 80)
         
         # Initialize the dispute state
         initial_state = initialize_dispute_state(
@@ -671,13 +810,13 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
             dispute_resolution_workflow.invoke(initial_state)
         )
         
-        print(f"\n{'='*80}")
-        print(f"[SUCCESS] DISPUTE PROCESSING COMPLETE")
-        print(f"{'='*80}")
-        print(f"Final Decision: {final_state['final_decision'].upper()}")
-        print(f"Category: {final_state['dispute_category']}")
-        print(f"Audit Trail Entries: {len(final_state['audit_trail'])}")
-        print(f"{'='*80}\n")
+        logger.info("%s", "=" * 80)
+        logger.info("[SUCCESS] DISPUTE PROCESSING COMPLETE")
+        logger.info("%s", "=" * 80)
+        logger.info("Final Decision: %s", final_state["final_decision"].upper())
+        logger.info("Category: %s", final_state["dispute_category"])
+        logger.info("Audit Trail Entries: %s", len(final_state["audit_trail"]))
+        logger.info("%s", "=" * 80)
         
         # Return the final state
         return {
@@ -702,10 +841,17 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        print(f"\n[ERROR] Error processing dispute: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error processing dispute: {str(e)}"
+        logger.error("Error processing dispute: %s", str(e), exc_info=True)
+        raise_api_error(
+            500,
+            "Unable to process dispute.",
+            code="DISPUTE_PROCESS_FAILED",
+            details={
+                "customer_id": request.customer_id,
+                "transaction_id": request.transaction_id,
+                "reason": str(e),
+            },
+            ticket_id=getattr(new_ticket, "id", None),
         )
 
 
@@ -732,19 +878,19 @@ async def get_analytics(db: Session = Depends(get_db)):
         HTTPException: If analytics calculation fails
     """
     try:
-        print(f"\n{'='*80}")
-        print(f"[ANALYTICS] Calculating Executive Dashboard Metrics")
-        print(f"{'='*80}")
+        logger.info("%s", "=" * 80)
+        logger.info("[ANALYTICS] Calculating Executive Dashboard Metrics")
+        logger.info("%s", "=" * 80)
         
         # 1. Total tickets
         total_tickets = db.query(models.DisputeTicket).count()
-        print(f"Total Tickets: {total_tickets}")
+        logger.info("Total Tickets: %s", total_tickets)
         
         # 2. Auto-resolved count (auto_approved + auto_rejected)
         auto_resolved_count = db.query(models.DisputeTicket).filter(
             models.DisputeTicket.status.in_(['auto_approved', 'auto_rejected'])
         ).count()
-        print(f"Auto-Resolved Count: {auto_resolved_count}")
+        logger.info("Auto-Resolved Count: %s", auto_resolved_count)
         
         # 3. Human review count (human_review_required + resolved_approved + resolved_rejected)
         human_review_count = db.query(models.DisputeTicket).filter(
@@ -754,13 +900,13 @@ async def get_analytics(db: Session = Depends(get_db)):
                 'resolved_rejected'
             ])
         ).count()
-        print(f"Human Review Count: {human_review_count}")
+        logger.info("Human Review Count: %s", human_review_count)
         
         # 4. Auto-resolution rate
         auto_resolution_rate = 0.0
         if total_tickets > 0:
             auto_resolution_rate = round((auto_resolved_count / total_tickets) * 100, 2)
-        print(f"Auto-Resolution Rate: {auto_resolution_rate}%")
+        logger.info("Auto-Resolution Rate: %s%%", auto_resolution_rate)
         
         # 5. Total fraud prevented
         # Get all auto-approved tickets where dispute_reason contains fraud-related keywords
@@ -792,9 +938,8 @@ async def get_analytics(db: Session = Depends(get_db)):
                     fraud_ticket_count += 1
         
         total_fraud_prevented = round(total_fraud_prevented, 2)
-        print(f"Total Fraud Prevented: ${total_fraud_prevented} ({fraud_ticket_count} tickets)")
-        
-        print(f"{'='*80}\n")
+        logger.info("Total Fraud Prevented: $%s (%s tickets)", total_fraud_prevented, fraud_ticket_count)
+        logger.info("%s", "=" * 80)
         
         # Return analytics in clean JSON structure
         return {
@@ -814,10 +959,12 @@ async def get_analytics(db: Session = Depends(get_db)):
         }
         
     except Exception as e:
-        print(f"\n[ERROR] Error calculating analytics: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error calculating analytics: {str(e)}"
+        logger.error("Error calculating analytics: %s", str(e), exc_info=True)
+        raise_api_error(
+            500,
+            "Unable to calculate analytics.",
+            code="ANALYTICS_CALCULATION_FAILED",
+            details={"reason": str(e)},
         )
 
 

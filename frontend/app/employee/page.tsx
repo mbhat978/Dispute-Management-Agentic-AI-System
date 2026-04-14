@@ -26,6 +26,27 @@ interface Analytics {
   total_fraud_prevented: number;
 }
 
+interface ApiErrorResponse {
+  status?: string;
+  error?: {
+    code?: string;
+    message?: string;
+    details?: Record<string, unknown>;
+  };
+  detail?: string | ApiErrorResponse;
+}
+
+function getErrorMessage(errorData: ApiErrorResponse | null | undefined, fallback: string): string {
+  if (!errorData) return fallback;
+  if (typeof errorData.detail === "string") return errorData.detail;
+  if (typeof errorData.error?.message === "string") return errorData.error.message;
+  if (typeof errorData.detail === "object" && errorData.detail && "error" in errorData.detail) {
+    const nested = errorData.detail as ApiErrorResponse;
+    if (typeof nested.error?.message === "string") return nested.error.message;
+  }
+  return fallback;
+}
+
 // Function to get badge variant and color based on status
 function getStatusBadge(status: string) {
   switch (status) {
@@ -66,11 +87,13 @@ export default function DashboardPage() {
         ]);
         
         if (!disputesResponse.ok) {
-          throw new Error(`Failed to fetch disputes: ${disputesResponse.statusText}`);
+          const errorData: ApiErrorResponse = await disputesResponse.json().catch(() => ({}));
+          throw new Error(getErrorMessage(errorData, `Failed to fetch disputes: ${disputesResponse.statusText}`));
         }
         
         if (!analyticsResponse.ok) {
-          throw new Error(`Failed to fetch analytics: ${analyticsResponse.statusText}`);
+          const errorData: ApiErrorResponse = await analyticsResponse.json().catch(() => ({}));
+          throw new Error(getErrorMessage(errorData, `Failed to fetch analytics: ${analyticsResponse.statusText}`));
         }
         
         const disputesData = await disputesResponse.json();

@@ -49,6 +49,27 @@ interface TicketData {
   audit_logs: AuditLog[];
 }
 
+interface ApiErrorResponse {
+  status?: string;
+  error?: {
+    code?: string;
+    message?: string;
+    details?: Record<string, unknown>;
+  };
+  detail?: string | ApiErrorResponse;
+}
+
+function getErrorMessage(errorData: ApiErrorResponse | null | undefined, fallback: string): string {
+  if (!errorData) return fallback;
+  if (typeof errorData.detail === "string") return errorData.detail;
+  if (typeof errorData.error?.message === "string") return errorData.error.message;
+  if (typeof errorData.detail === "object" && errorData.detail && "error" in errorData.detail) {
+    const nested = errorData.detail as ApiErrorResponse;
+    if (typeof nested.error?.message === "string") return nested.error.message;
+  }
+  return fallback;
+}
+
 function getStatusBadge(status: string) {
   switch (status) {
     case "auto_approved":
@@ -139,6 +160,8 @@ export default function TicketDetailPage() {
   const [ticketData, setTicketData] = useState<TicketData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
   const [humanNotes, setHumanNotes] = useState("");
   const [showNotesDialog, setShowNotesDialog] = useState(false);
@@ -149,7 +172,8 @@ export default function TicketDetailPage() {
       try {
         const response = await fetch(`http://localhost:8000/api/disputes/${ticketId}`);
         if (!response.ok) {
-          throw new Error(`Failed to fetch ticket details: ${response.statusText}`);
+          const errorData: ApiErrorResponse = await response.json().catch(() => ({}));
+          throw new Error(getErrorMessage(errorData, `Failed to fetch ticket details: ${response.statusText}`));
         }
         const data = await response.json();
         setTicketData(data);
@@ -177,11 +201,12 @@ export default function TicketDetailPage() {
     setShowNotesDialog(false);
     setPendingAction(null);
     setHumanNotes("");
+    setActionError(null);
   };
 
   const handleConfirmResolution = async () => {
     if (!humanNotes.trim()) {
-      alert("Please provide notes for your decision.");
+      setActionError("Please provide notes for your decision.");
       return;
     }
 
@@ -191,6 +216,8 @@ export default function TicketDetailPage() {
     const resolutionStatus = action === "approve" ? "resolved_approved" : "resolved_rejected";
     
     setProcessing(true);
+    setActionError(null);
+    setActionSuccess(null);
     try {
       const response = await fetch(`http://localhost:8000/api/disputes/${ticketId}/resolve`, {
         method: 'POST',
@@ -204,12 +231,12 @@ export default function TicketDetailPage() {
       });
       
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `Failed to ${action} ticket: ${response.statusText}`);
+        const errorData: ApiErrorResponse = await response.json().catch(() => ({}));
+        throw new Error(getErrorMessage(errorData, `Failed to ${action} ticket: ${response.statusText}`));
       }
       
       const result = await response.json();
-      alert(`✅ ${result.message}`);
+      setActionSuccess(result.message ?? `Ticket ${action}ed successfully.`);
       
       // Reset state and refresh
       setShowNotesDialog(false);
@@ -220,7 +247,7 @@ export default function TicketDetailPage() {
       window.location.reload();
     } catch (err) {
       console.error(`Error ${action}ing ticket:`, err);
-      alert(`❌ Error: ${err instanceof Error ? err.message : `Failed to ${action} ticket`}`);
+      setActionError(err instanceof Error ? err.message : `Failed to ${action} ticket`);
     } finally {
       setProcessing(false);
     }
@@ -411,6 +438,18 @@ export default function TicketDetailPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                {actionError && (
+                  <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
+                    <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+                    <p className="text-sm">{actionError}</p>
+                  </div>
+                )}
+                {actionSuccess && (
+                  <div className="flex items-start gap-3 rounded-lg border border-green-200 bg-green-50 p-4 text-green-700">
+                    <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
+                    <p className="text-sm">{actionSuccess}</p>
+                  </div>
+                )}
                 {!showNotesDialog ? (
                   <div className="flex gap-3">
                     <Button

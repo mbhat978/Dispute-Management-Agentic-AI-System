@@ -94,14 +94,25 @@ def route_after_investigation(state: DisputeState) -> Literal["re_investigate", 
 
 def route_after_decision(state: DisputeState) -> Literal["investigator", "END"]:
     """
-    Loop back to investigation for low-confidence decisions while under iteration cap.
+    Loop back to investigation only when a follow-up pass was explicitly requested
+    and iterations remain. Human-review outcomes are terminal.
     """
     confidence = state.get("decision_confidence", 0.0)
     iteration_count = state.get("iteration_count", 0)
     max_iterations = state.get("max_iterations", MAX_WORKFLOW_ITERATIONS)
+    final_decision = state.get("final_decision", "")
+    working_memory = state.get("working_memory", {})
 
-    if confidence < ESCALATION_CONFIDENCE_THRESHOLD and iteration_count < max_iterations:
+    if final_decision == "human_review_required":
+        return "END"
+
+    if (
+        working_memory.get("reinvestigation_requested", False)
+        and confidence < ESCALATION_CONFIDENCE_THRESHOLD
+        and iteration_count < max_iterations
+    ):
         return "investigator"
+
     return "END"
 
 
@@ -151,8 +162,8 @@ def build_dispute_resolution_graph():
         }
     )
 
-    # Re-investigation feeds back into decision with updated state
-    workflow.add_edge("re_investigate", "decision")
+    # Re-investigation performs another evidence pass before decisioning again
+    workflow.add_edge("re_investigate", "investigator")
 
     # Conditional routing after decision
     workflow.add_conditional_edges(

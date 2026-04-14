@@ -4,13 +4,13 @@ sqlalchemy
 pydantic
 python-multipart
 
-# LangChain and LangGraph for agent orchestration - Updated for Python 3.12 compatibility
+# LangChain and LangGraph for agent orchestration - pinned for compatibility
 langgraph
 langchain
 langchain-openai
 langchain-core
 langsmith
-openai
+openai<2
 
 # Additional utilities
 python-dotenv
