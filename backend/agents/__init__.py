@@ -17,7 +17,8 @@ from .tools_wrapper import (
     initiate_refund_tool,
     route_to_human_tool
 )
-from .triage import triage_node, DISPUTE_CATEGORIES
+from .triage_react import triage_node_react
+from .config import DISPUTE_CATEGORIES
 from .investigator import investigator_node
 from .decision import decision_node
 from .orchestrator import build_dispute_resolution_graph, dispute_resolution_workflow
@@ -40,7 +41,7 @@ __all__ = [
     "route_to_human_tool",
     
     # Agent Nodes
-    "triage_node",
+    "triage_node_react",
     "investigator_node",
     "decision_node",
     

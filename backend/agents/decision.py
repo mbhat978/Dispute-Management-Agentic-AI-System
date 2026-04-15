@@ -32,6 +32,8 @@ def decision_node(state: DisputeState) -> Dict[str, Any]:
     """
     Decision Agent: Makes the final decision based on gathered evidence.
     """
+    print(f"\n[DECISION AGENT] Making final decision...")
+    
     logger.info(
         "[DECISION AGENT] start | ticket_id=%s | customer_id=%s | category=%s",
         state.get("ticket_id"),
@@ -114,6 +116,9 @@ RECOMMENDED ACTIONS:
 RULE VALIDATION:
 {rule_reason or "No rule override required"}"""
         audit_trail.append(decision_entry)
+        
+        print(f"  [SUCCESS] Final decision: {final_decision.upper()} - {justification[:100]}...")
+        
         logger.info(
             "[DECISION AGENT] decision=%s | proposed=%s | confidence=%.2f | rule_reason=%s",
             final_decision.upper(),

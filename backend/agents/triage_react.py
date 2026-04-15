@@ -3,6 +3,7 @@ ReAct-Powered Triage Agent for Banking Dispute Management System
 
 This module contains the LLM-powered triage agent that uses reasoning
 to analyze customer queries and categorize disputes intelligently.
+Includes a rule-based fallback for when LLM is unavailable.
 """
 
 from typing import Dict, Any
@@ -24,6 +25,60 @@ from .config import (
 logger = logging.getLogger("dispute_management.agents.triage")
 
 
+def _rule_based_triage_fallback(state: DisputeState) -> Dict[str, Any]:
+    """
+    Rule-based triage fallback when LLM is unavailable.
+    
+    This function uses keyword matching to categorize disputes.
+    Used as a fallback when OpenAI API is unavailable or fails.
+    
+    Args:
+        state (DisputeState): Current dispute state
+        
+    Returns:
+        Dict with updated dispute_category and audit_trail
+    """
+    logger.info(
+        "[TRIAGE AGENT - RULE BASED FALLBACK] start | ticket_id=%s | customer_id=%s",
+        state.get("ticket_id"),
+        state.get("customer_id"),
+    )
+    
+    customer_query = state["customer_query"]
+    query_lower = customer_query.lower()
+    
+    # Rule-based categorization using keyword matching
+    if any(term in query_lower for term in ["loan", "emi", "interest", "principal", "tenure", "loan account"]):
+        category = "loan_dispute"
+    elif any(term in query_lower for term in ["refund not received", "refund pending", "refund status", "waiting for refund", "refund delayed"]):
+        category = "refund_not_received"
+    elif any(term in query_lower for term in ["atm", "cash", "dispense", "debited", "debit"]):
+        category = "atm_failure"
+    elif any(term in query_lower for term in ["fraud", "unauthorized", "unknown transaction", "didn't make", "did not make", "stolen"]):
+        category = "fraud"
+    elif any(term in query_lower for term in ["duplicate", "charged twice", "double charge", "multiple charge"]):
+        category = "duplicate"
+    elif any(term in query_lower for term in ["merchant", "service", "product", "goods", "refund"]):
+        category = "merchant_dispute"
+    elif any(term in query_lower for term in ["failed", "declined", "error", "not completed", "deducted"]):
+        category = "failed_transaction"
+    else:
+        category = "unknown"
+    
+    audit_entry = f"Triage Agent (Rule-Based Fallback): Categorized dispute as '{category}' - {DISPUTE_CATEGORIES.get(category, 'Unknown category')}"
+    
+    logger.info(
+        "[TRIAGE AGENT - RULE BASED FALLBACK] result | category=%s",
+        category,
+    )
+    
+    return {
+        "dispute_category": category,
+        "triage_confidence": 0.5,  # Lower confidence for rule-based
+        "audit_trail": state["audit_trail"] + [audit_entry]
+    }
+
+
 def triage_node_react(state: DisputeState) -> Dict[str, Any]:
     """
     LLM-Powered Triage Agent: Analyzes customer query with reasoning.
@@ -38,6 +93,7 @@ def triage_node_react(state: DisputeState) -> Dict[str, Any]:
     Returns:
         Dict with updated dispute_category, triage_confidence, and audit_trail
     """
+    print(f"\n[TRIAGE AGENT] Analyzing customer query...")
     logger.info(
         "[TRIAGE AGENT - REACT] start | ticket_id=%s | customer_id=%s | query=%s",
         state.get("ticket_id"),
@@ -50,8 +106,7 @@ def triage_node_react(state: DisputeState) -> Dict[str, Any]:
     # Check if OpenAI API key is available
     if not OPENAI_API_KEY:
         logger.warning("No OpenAI API key found. Falling back to rule-based triage.")
-        from .triage import triage_node
-        return triage_node(state)
+        return _rule_based_triage_fallback(state)
     
     try:
         # Initialize LLM with custom http_client to avoid proxies parameter issue
@@ -164,6 +219,8 @@ Timestamp: {datetime.utcnow().isoformat()}"""
             ", ".join(result.get("key_indicators", [])),
         )
         
+        print(f"  [SUCCESS] Categorized as: {category.upper()} (Confidence: {confidence:.2f})")
+        
         updated_working_memory = dict(state.get("working_memory", {}))
         updated_working_memory.update({
             "triage_reasoning": result.get("reasoning", ""),
@@ -183,13 +240,11 @@ Timestamp: {datetime.utcnow().isoformat()}"""
         logger.info("[TRIAGE AGENT - REACT] fallback=rule_based")
         
         # Fallback to rule-based triage
-        from .triage import triage_node
-        result = triage_node(state)
+        result = _rule_based_triage_fallback(state)
         
-        # Add low confidence since we fell back
-        result["triage_confidence"] = 0.5
+        # Add additional context about the fallback
         result["audit_trail"] = result.get("audit_trail", state["audit_trail"]) + [
-            f"Triage Agent: LLM failed ({str(e)}), used rule-based fallback with confidence 0.5"
+            f"Note: LLM triage failed ({str(e)}), used rule-based fallback"
         ]
 
         fallback_working_memory = dict(state.get("working_memory", {}))

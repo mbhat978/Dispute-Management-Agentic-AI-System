@@ -26,6 +26,9 @@ def investigator_node(state: DisputeState) -> Dict[str, Any]:
     """
     Investigator Agent: Gathers evidence using dynamic tool selection.
     """
+    category = state["dispute_category"]
+    print(f"\n[INVESTIGATOR AGENT] Gathering evidence for {category}...")
+    
     logger.info(
         "[INVESTIGATOR AGENT] start | ticket_id=%s | customer_id=%s | category=%s | iteration=%s",
         state.get("ticket_id"),
@@ -34,7 +37,6 @@ def investigator_node(state: DisputeState) -> Dict[str, Any]:
         state.get("iteration_count", 0),
     )
 
-    category = state["dispute_category"]
     ticket_id = state["ticket_id"]
     customer_id = state["customer_id"]
     gathered_data = dict(state["gathered_data"])
@@ -86,11 +88,16 @@ def investigator_node(state: DisputeState) -> Dict[str, Any]:
             tool_input = step["input"]
             data_key = step["data_key"]
 
+            print(f"  [THOUGHT] Need to use {tool_name}")
+            
             logger.info(
                 "[INVESTIGATOR AGENT] action=tool_call | tool=%s | input=%s",
                 tool_name,
                 json.dumps(tool_input, default=str),
             )
+            
+            print(f"  [ACTION] Calling {tool_name} with {tool_input}")
+            
             audit_trail.append(
                 f"Investigator Agent ACTION: Calling {tool_name} with input {json.dumps(tool_input, default=str)}"
             )
@@ -99,6 +106,8 @@ def investigator_node(state: DisputeState) -> Dict[str, Any]:
             gathered_data[data_key] = observation
             executed_steps.append(tool_name)
 
+            print(f"  [OBSERVATION] {tool_name} returned data")
+            
             logger.info(
                 "[INVESTIGATOR AGENT] observation | tool=%s | output=%s",
                 tool_name,
@@ -398,7 +407,7 @@ def _sanitize_plan(
         elif tool_name == "check_merchant_refund_status":
             tool_input = {"transaction_id": transaction_id}
         elif tool_name == "check_duplicate_transactions":
-            tool_input = {"customer_id": customer_id}
+            tool_input = {"customer_id": customer_id, "transaction_id": transaction_id}
 
         if data_key == "transaction_details" and "transaction_details" in prior_gathered_data:
             continue
