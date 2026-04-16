@@ -7,8 +7,8 @@ from datetime import datetime
 from typing import cast, Any, Optional
 from dotenv import load_dotenv
 import os
-import logging
 import traceback
+from loguru import logger
 
 # Load environment variables from .env file
 load_dotenv()
@@ -17,13 +17,6 @@ from database import engine, get_db, Base
 import models
 from agents.state import DisputeState, initialize_dispute_state
 from agents.orchestrator import dispute_resolution_workflow
-
-# Configure application logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-)
-logger = logging.getLogger("dispute_management")
 
 # Create all tables in the database
 Base.metadata.create_all(bind=engine)
@@ -147,11 +140,10 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    logger.error(
-        "Unhandled exception | path=%s | error=%s\n%s",
+    logger.exception(
+        "Unhandled exception | path={} | error={}",
         request.url.path,
         str(exc),
-        traceback.format_exc(),
     )
     return JSONResponse(
         status_code=500,
@@ -213,7 +205,7 @@ async def get_customers(db: Session = Depends(get_db)):
             ],
         }
     except Exception as e:
-        logger.error("Error fetching customers: %s", str(e), exc_info=True)
+        logger.exception("Error fetching customers: {}", str(e))
         raise_api_error(
             500,
             "Unable to load customers.",
@@ -268,7 +260,7 @@ async def get_customer_transactions(customer_id: int, db: Session = Depends(get_
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("Error fetching customer transactions: %s", str(e), exc_info=True)
+        logger.exception("Error fetching customer transactions: {}", str(e))
         raise_api_error(
             500,
             "Unable to load customer transactions.",
@@ -313,7 +305,7 @@ async def get_all_disputes(db: Session = Depends(get_db)):
         }
         
     except Exception as e:
-        logger.error("Error fetching disputes: %s", str(e), exc_info=True)
+        logger.exception("Error fetching disputes: {}", str(e))
         raise_api_error(
             500,
             "Unable to load disputes.",
@@ -438,7 +430,7 @@ async def get_dispute_by_id(ticket_id: int, db: Session = Depends(get_db)):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("Error fetching dispute details: %s", str(e), exc_info=True)
+        logger.exception("Error fetching dispute details: {}", str(e))
         raise_api_error(
             500,
             "Unable to load dispute details.",
@@ -505,7 +497,7 @@ async def approve_dispute(ticket_id: int, db: Session = Depends(get_db)):
         raise
     except Exception as e:
         db.rollback()
-        logger.error("Error approving dispute: %s", str(e), exc_info=True)
+        logger.exception("Error approving dispute: {}", str(e))
         raise_api_error(
             500,
             "Unable to approve dispute.",
@@ -572,7 +564,7 @@ async def reject_dispute(ticket_id: int, db: Session = Depends(get_db)):
         raise
     except Exception as e:
         db.rollback()
-        logger.error("Error rejecting dispute: %s", str(e), exc_info=True)
+        logger.exception("Error rejecting dispute: {}", str(e))
         raise_api_error(
             500,
             "Unable to reject dispute.",
@@ -713,7 +705,7 @@ their judgment to override or confirm the AI recommendation."""
         raise
     except Exception as e:
         db.rollback()
-        logger.error("Error resolving dispute: %s", str(e), exc_info=True)
+        logger.exception("Error resolving dispute: {}", str(e))
         raise_api_error(
             500,
             "Unable to resolve dispute.",
@@ -841,7 +833,7 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        logger.error("Error processing dispute: %s", str(e), exc_info=True)
+        logger.exception("Error processing dispute: {}", str(e))
         raise_api_error(
             500,
             "Unable to process dispute.",
@@ -959,7 +951,7 @@ async def get_analytics(db: Session = Depends(get_db)):
         }
         
     except Exception as e:
-        logger.error("Error calculating analytics: %s", str(e), exc_info=True)
+        logger.exception("Error calculating analytics: {}", str(e))
         raise_api_error(
             500,
             "Unable to calculate analytics.",

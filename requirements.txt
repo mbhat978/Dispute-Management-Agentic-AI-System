@@ -3,6 +3,7 @@ uvicorn[standard]
 sqlalchemy
 pydantic
 python-multipart
+loguru
 
 # LangChain and LangGraph for agent orchestration - pinned for compatibility
 langgraph
@@ -11,6 +12,7 @@ langchain-openai
 langchain-core
 langsmith
 openai<2
+httpx
 
 # Additional utilities
 python-dotenv

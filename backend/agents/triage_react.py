@@ -8,7 +8,7 @@ Includes a rule-based fallback for when LLM is unavailable.
 
 from typing import Dict, Any
 import json
-import logging
+from loguru import logger
 from datetime import datetime
 from pydantic import SecretStr
 from langchain_openai import ChatOpenAI
@@ -20,9 +20,6 @@ from .config import (
     TRIAGE_TEMPERATURE,
     OPENAI_API_KEY,
 )
-
-
-logger = logging.getLogger("dispute_management.agents.triage")
 
 
 def _rule_based_triage_fallback(state: DisputeState) -> Dict[str, Any]:
@@ -93,7 +90,7 @@ def triage_node_react(state: DisputeState) -> Dict[str, Any]:
     Returns:
         Dict with updated dispute_category, triage_confidence, and audit_trail
     """
-    print(f"\n[TRIAGE AGENT] Analyzing customer query...")
+    logger.info("[TRIAGE AGENT] Analyzing customer query...")
     logger.info(
         "[TRIAGE AGENT - REACT] start | ticket_id=%s | customer_id=%s | query=%s",
         state.get("ticket_id"),
@@ -162,7 +159,7 @@ Important:
         category_keys = ", ".join(DISPUTE_CATEGORIES.keys())
         
         # Invoke LLM
-        logger.info("[TRIAGE AGENT - REACT] action=invoke_llm | model=%s", TRIAGE_MODEL)
+        logger.debug(f"[TRIAGE AGENT - REACT] action=invoke_llm | model={TRIAGE_MODEL}")
         response = llm.invoke(prompt.format_messages(
             category_descriptions=category_descriptions,
             category_keys=category_keys,
@@ -185,7 +182,7 @@ Important:
         # Validate category
         category = result.get("category", "unknown")
         if category not in DISPUTE_CATEGORIES:
-            logger.warning("Invalid category '%s' from LLM, defaulting to 'unknown'", category)
+            logger.warning(f"Invalid category '{category}' from LLM, defaulting to 'unknown'")
             category = "unknown"
             result["confidence"] = 0.3
         
@@ -213,13 +210,11 @@ Model: {TRIAGE_MODEL}
 Timestamp: {datetime.utcnow().isoformat()}"""
         
         logger.info(
-            "[TRIAGE AGENT - REACT] result | category=%s | confidence=%.2f | indicators=%s",
-            category,
-            confidence,
-            ", ".join(result.get("key_indicators", [])),
+            f"[TRIAGE AGENT - REACT] result | category={category} | "
+            f"confidence={confidence:.2f} | indicators={', '.join(result.get('key_indicators', []))}"
         )
         
-        print(f"  [SUCCESS] Categorized as: {category.upper()} (Confidence: {confidence:.2f})")
+        logger.success(f"[TRIAGE AGENT] Categorized as: {category.upper()} (Confidence: {confidence:.2f})")
         
         updated_working_memory = dict(state.get("working_memory", {}))
         updated_working_memory.update({
@@ -236,7 +231,7 @@ Timestamp: {datetime.utcnow().isoformat()}"""
         }
         
     except Exception as e:
-        logger.error("LLM triage failed: %s", str(e), exc_info=True)
+        logger.exception(f"LLM triage failed: {str(e)}")
         logger.info("[TRIAGE AGENT - REACT] fallback=rule_based")
         
         # Fallback to rule-based triage

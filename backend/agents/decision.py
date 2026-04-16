@@ -8,7 +8,7 @@ LLM-guided reasoning with hard business-rule validation and execution safety.
 from typing import Dict, Any, Tuple
 from datetime import datetime
 import json
-import logging
+from loguru import logger
 from pydantic import SecretStr
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
@@ -25,20 +25,15 @@ from .config import (
 )
 
 
-logger = logging.getLogger("dispute_management.agents.decision")
-
-
 def decision_node(state: DisputeState) -> Dict[str, Any]:
     """
     Decision Agent: Makes the final decision based on gathered evidence.
     """
-    print(f"\n[DECISION AGENT] Making final decision...")
+    logger.info("[DECISION AGENT] Making final decision...")
     
     logger.info(
-        "[DECISION AGENT] start | ticket_id=%s | customer_id=%s | category=%s",
-        state.get("ticket_id"),
-        state.get("customer_id"),
-        state.get("dispute_category"),
+        f"[DECISION AGENT] start | ticket_id={state.get('ticket_id')} | "
+        f"customer_id={state.get('customer_id')} | category={state.get('dispute_category')}"
     )
 
     category = state["dispute_category"]
@@ -117,14 +112,11 @@ RULE VALIDATION:
 {rule_reason or "No rule override required"}"""
         audit_trail.append(decision_entry)
         
-        print(f"  [SUCCESS] Final decision: {final_decision.upper()} - {justification[:100]}...")
+        logger.success(f"[DECISION AGENT] Final decision: {final_decision.upper()} - {justification[:100]}...")
         
         logger.info(
-            "[DECISION AGENT] decision=%s | proposed=%s | confidence=%.2f | rule_reason=%s",
-            final_decision.upper(),
-            proposed_decision,
-            llm_confidence,
-            rule_reason or "none",
+            f"[DECISION AGENT] decision={final_decision.upper()} | proposed={proposed_decision} | "
+            f"confidence={llm_confidence:.2f} | rule_reason={rule_reason or 'none'}"
         )
 
         ticket = db.query(models.DisputeTicket).filter(
@@ -136,7 +128,7 @@ RULE VALIDATION:
             ticket.resolution_notes = justification  # type: ignore[assignment]
             ticket.updated_at = datetime.utcnow()  # type: ignore[assignment]
             db.commit()
-            logger.info("[DECISION AGENT] ticket_updated | ticket_id=%s | status=%s", ticket_id, ticket.status)
+            logger.success(f"[DECISION AGENT] ticket_updated | ticket_id={ticket_id} | status={ticket.status}")
 
         for entry in audit_trail:
             if "THOUGHT:" in entry or "Triage Agent" in entry or "Clarification Agent" in entry or "Orchestrator:" in entry:
@@ -165,7 +157,7 @@ RULE VALIDATION:
             db.add(audit_log)
 
         db.commit()
-        logger.info("[DECISION AGENT] audit_logs_saved | count=%s", len(audit_trail))
+        logger.info(f"[DECISION AGENT] audit_logs_saved | count={len(audit_trail)}")
 
         decision_memory = agent_memories.get(
             "decision",
@@ -191,7 +183,7 @@ RULE VALIDATION:
         working_memory["last_decision"] = final_decision
         working_memory["last_decision_timestamp"] = datetime.utcnow().isoformat()
 
-        logger.info("[DECISION AGENT] complete | final_decision=%s", final_decision.upper())
+        logger.success(f"[DECISION AGENT] complete | final_decision={final_decision.upper()}")
 
         return {
             "final_decision": final_decision,
@@ -206,7 +198,7 @@ RULE VALIDATION:
         }
 
     except Exception as e:
-        logger.error("Error during decision making: %s", str(e), exc_info=True)
+        logger.exception(f"Error during decision making: {str(e)}")
         audit_entry = f"Decision Agent ERROR: {str(e)}"
         audit_trail.append(audit_entry)
         return {
@@ -338,7 +330,7 @@ GATHERED EVIDENCE:
 Provide your comprehensive analysis and decision:""")
         ])
 
-        logger.info("[DECISION AGENT] action=invoke_llm_reasoner | model=%s", DECISION_MODEL)
+        logger.debug(f"[DECISION AGENT] action=invoke_llm_reasoner | model={DECISION_MODEL}")
         response = llm.invoke(prompt.format_messages(
             category=category,
             query=query,
@@ -362,7 +354,7 @@ Provide your comprehensive analysis and decision:""")
         # Validate decision value
         decision = parsed.get("decision", "human_review_required")
         if decision not in {"auto_approved", "auto_rejected", "human_review_required"}:
-            logger.warning("Invalid decision '%s' from LLM, using fallback", decision)
+            logger.warning(f"Invalid decision '{decision}' from LLM, using fallback")
             return fallback
         
         # Ensure all required fields exist
@@ -374,19 +366,18 @@ Provide your comprehensive analysis and decision:""")
         parsed.setdefault("recommended_actions", [])
         
         logger.info(
-            "[DECISION AGENT] llm_result | decision=%s | confidence=%.2f | risk_factors=%s",
-            decision,
-            parsed.get("confidence", 0.5),
-            len(parsed.get("risk_factors", [])),
+            f"[DECISION AGENT] llm_result | decision={decision} | "
+            f"confidence={parsed.get('confidence', 0.5):.2f} | "
+            f"risk_factors={len(parsed.get('risk_factors', []))}"
         )
         
         return parsed
 
     except json.JSONDecodeError as e:
-        logger.error("Failed to parse LLM decision response: %s", str(e), exc_info=True)
+        logger.exception(f"Failed to parse LLM decision response: {str(e)}")
         return fallback
     except Exception as e:
-        logger.error("LLM decision reasoning failed: %s", str(e), exc_info=True)
+        logger.exception(f"LLM decision reasoning failed: {str(e)}")
         return fallback
 
 
