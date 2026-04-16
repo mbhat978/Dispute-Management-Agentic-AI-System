@@ -6,9 +6,16 @@ the banking dispute management system. Each function queries or modifies the
 database and returns structured information that agents can use for decision-making.
 """
 
+import sys
+from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, cast
 from sqlalchemy.orm import Session
+
+# Add the backend directory to the Python path
+backend_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(backend_dir))
+
 from database import SessionLocal
 import models
 

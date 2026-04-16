@@ -12,7 +12,15 @@ from datetime import datetime
 from pydantic import SecretStr
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
-import banking_tools
+import sys
+import os
+
+# Add backend directory to path to import mcp_client
+backend_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if backend_path not in sys.path:
+    sys.path.insert(0, backend_path)
+
+import mcp_client as banking_tools
 import models
 from database import SessionLocal
 from .state import DisputeState

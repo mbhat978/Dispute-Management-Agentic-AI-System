@@ -11,9 +11,19 @@ from datetime import datetime
 import sys
 import os
 
-# Add parent directory to path to import banking_tools
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import banking_tools
+# Add backend directory to path to import mcp_client
+backend_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if backend_path not in sys.path:
+    sys.path.insert(0, backend_path)
+
+# Import mcp_client as banking_tools - routes requests to MCP server
+try:
+    import mcp_client as banking_tools  # type: ignore
+except ImportError as e:
+    raise ImportError(
+        f"Failed to import mcp_client from {backend_path}. "
+        f"Ensure mcp_client.py exists in backend/. Error: {e}"
+    )
 
 
 # ============================================================================

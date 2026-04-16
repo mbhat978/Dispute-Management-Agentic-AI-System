@@ -16,3 +16,5 @@ httpx
 
 # Additional utilities
 python-dotenv
+
+mcp
