@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, ArrowLeft, Building2, CheckCircle2, Landmark, Send, ShieldCheck } from "lucide-react";
+import { AlertCircle, Brain, Building2, CheckCircle2, Landmark, Radio, Send, WifiOff } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -72,6 +72,272 @@ function formatDecisionMessage(decision: string): string {
   }
 }
 
+interface LiveFeedState {
+  dispute_category?: string | null;
+  final_decision?: string | null;
+  triage_confidence?: number | null;
+  investigation_confidence?: number | null;
+  decision_confidence?: number | null;
+  audit_trail_count?: number;
+  gathered_data_keys?: string[];
+}
+
+interface LiveFeedEvent {
+  id: string;
+  timestamp: string;
+  eventType: string;
+  message: string;
+  ticket_id?: number | null;
+  node?: string | null;
+  final_decision?: string | null;
+  dispute_category?: string | null;
+  state?: LiveFeedState;
+}
+
+function formatStatus(status: string): string {
+  return status
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function formatEventLabel(eventType: string): string {
+  return eventType
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function getEventBadgeClass(eventType: string): string {
+  switch (eventType) {
+    case "processing_started":
+      return "bg-blue-500 hover:bg-blue-600";
+    case "agent_update":
+      return "bg-purple-500 hover:bg-purple-600";
+    case "processing_completed":
+      return "bg-green-500 hover:bg-green-600";
+    case "processing_failed":
+      return "bg-red-500 hover:bg-red-600";
+    case "connection":
+      return "bg-emerald-500 hover:bg-emerald-600";
+    case "heartbeat":
+      return "bg-gray-500 hover:bg-gray-600";
+    default:
+      return "";
+  }
+}
+
+function LiveAiFeed({ activeTicketId }: { activeTicketId: number | null }) {
+  const [events, setEvents] = useState<LiveFeedEvent[]>([]);
+  const [connectionStatus, setConnectionStatus] = useState<"idle" | "connecting" | "connected" | "disconnected">("idle");
+
+  useEffect(() => {
+    if (!activeTicketId) {
+      setConnectionStatus("idle");
+      setEvents([]);
+      return;
+    }
+
+    setConnectionStatus("connecting");
+    setEvents([]);
+
+    const eventSource = new EventSource(`${API_BASE_URL}/api/disputes/stream`);
+
+    const appendEvent = (eventType: string, rawData: string) => {
+      try {
+        const parsed = JSON.parse(rawData) as {
+          timestamp?: string;
+          message?: string;
+          ticket_id?: number | null;
+          node?: string | null;
+          final_decision?: string | null;
+          dispute_category?: string | null;
+          state?: LiveFeedState;
+        };
+
+        if (parsed.ticket_id != null && parsed.ticket_id !== activeTicketId) {
+          return;
+        }
+
+        setEvents((current) => {
+          const nextEvent: LiveFeedEvent = {
+            id: `${eventType}-${parsed.timestamp ?? Date.now()}-${current.length}`,
+            timestamp: parsed.timestamp ?? new Date().toISOString(),
+            eventType,
+            message: parsed.message ?? "AI workflow update received",
+            ticket_id: parsed.ticket_id,
+            node: parsed.node,
+            final_decision: parsed.final_decision ?? parsed.state?.final_decision ?? null,
+            dispute_category: parsed.dispute_category ?? parsed.state?.dispute_category ?? null,
+            state: parsed.state,
+          };
+
+          return [nextEvent, ...current].slice(0, 30);
+        });
+      } catch (streamError) {
+        console.error("Failed to parse live feed event:", streamError, rawData);
+      }
+    };
+
+    const registerEventType = (eventType: string) => {
+      eventSource.addEventListener(eventType, (event) => {
+        setConnectionStatus("connected");
+        appendEvent(eventType, (event as MessageEvent).data);
+      });
+    };
+
+    registerEventType("connection");
+    registerEventType("processing_started");
+    registerEventType("agent_update");
+    registerEventType("processing_completed");
+    registerEventType("processing_failed");
+    registerEventType("heartbeat");
+
+    eventSource.onopen = () => {
+      setConnectionStatus("connected");
+    };
+
+    eventSource.onerror = () => {
+      setConnectionStatus("disconnected");
+    };
+
+    return () => {
+      eventSource.close();
+      setConnectionStatus("disconnected");
+    };
+  }, [activeTicketId]);
+
+  const statusBadge = useMemo(() => {
+    switch (connectionStatus) {
+      case "idle":
+        return {
+          label: "Waiting",
+          className: "bg-slate-500 hover:bg-slate-600",
+          icon: <Radio className="h-3.5 w-3.5 mr-1" />,
+        };
+      case "connected":
+        return {
+          label: "Connected",
+          className: "bg-green-500 hover:bg-green-600",
+          icon: <Radio className="h-3.5 w-3.5 mr-1" />,
+        };
+      case "connecting":
+        return {
+          label: "Connecting",
+          className: "bg-yellow-500 hover:bg-yellow-600 text-black",
+          icon: <Radio className="h-3.5 w-3.5 mr-1 animate-pulse" />,
+        };
+      default:
+        return {
+          label: "Disconnected",
+          className: "bg-red-500 hover:bg-red-600",
+          icon: <WifiOff className="h-3.5 w-3.5 mr-1" />,
+        };
+    }
+  }, [connectionStatus]);
+
+  return (
+    <Card className="border-slate-200 shadow-sm">
+      <CardHeader>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-slate-900">
+              <Brain className="h-5 w-5 text-violet-600" />
+              Live AI Feed
+            </CardTitle>
+            <CardDescription>
+              Follow your dispute as our AI agents review evidence and work toward a decision.
+            </CardDescription>
+          </div>
+          <Badge className={statusBadge.className}>
+            {statusBadge.icon}
+            {statusBadge.label}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {events.length === 0 ? (
+          <div className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">
+            {!activeTicketId
+              ? "Submit a dispute to start the live agent activity feed."
+              : "Waiting for live updates for your submitted dispute."}
+          </div>
+        ) : (
+          <div className="space-y-3 max-h-[420px] overflow-y-auto pr-2">
+            {events.map((event) => (
+              <div key={event.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Badge className={getEventBadgeClass(event.eventType)}>
+                      {formatEventLabel(event.eventType)}
+                    </Badge>
+                    {event.node && (
+                      <Badge variant="outline">
+                        Step: {event.node}
+                      </Badge>
+                    )}
+                    {event.ticket_id != null && (
+                      <Badge variant="secondary">
+                        Ticket #{event.ticket_id}
+                      </Badge>
+                    )}
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(event.timestamp).toLocaleTimeString()}
+                  </span>
+                </div>
+
+                <p className="mt-3 text-sm leading-relaxed text-slate-700">{event.message}</p>
+
+                {(event.dispute_category || event.final_decision || event.state) && (
+                  <div className="mt-3 grid gap-2 md:grid-cols-2">
+                    {(event.dispute_category || event.state?.dispute_category) && (
+                      <div className="rounded-md bg-white p-3 text-xs text-slate-700">
+                        <span className="font-semibold">Category:</span>{" "}
+                        {event.dispute_category ?? event.state?.dispute_category}
+                      </div>
+                    )}
+                    {(event.final_decision || event.state?.final_decision) && (
+                      <div className="rounded-md bg-white p-3 text-xs text-slate-700">
+                        <span className="font-semibold">Decision:</span>{" "}
+                        {formatStatus(event.final_decision ?? event.state?.final_decision ?? "")}
+                      </div>
+                    )}
+                    {typeof event.state?.triage_confidence === "number" && (
+                      <div className="rounded-md bg-white p-3 text-xs text-slate-700">
+                        <span className="font-semibold">Triage Confidence:</span>{" "}
+                        {(event.state.triage_confidence * 100).toFixed(1)}%
+                      </div>
+                    )}
+                    {typeof event.state?.investigation_confidence === "number" && (
+                      <div className="rounded-md bg-white p-3 text-xs text-slate-700">
+                        <span className="font-semibold">Investigation Confidence:</span>{" "}
+                        {(event.state.investigation_confidence * 100).toFixed(1)}%
+                      </div>
+                    )}
+                    {typeof event.state?.decision_confidence === "number" && (
+                      <div className="rounded-md bg-white p-3 text-xs text-slate-700">
+                        <span className="font-semibold">Decision Confidence:</span>{" "}
+                        {(event.state.decision_confidence * 100).toFixed(1)}%
+                      </div>
+                    )}
+                    {typeof event.state?.audit_trail_count === "number" && (
+                      <div className="rounded-md bg-white p-3 text-xs text-slate-700">
+                        <span className="font-semibold">Audit Trail Entries:</span>{" "}
+                        {event.state.audit_trail_count}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function CustomerPortalPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -84,6 +350,7 @@ export default function CustomerPortalPage() {
   const [error, setError] = useState<string | null>(null);
   const [decisionResult, setDecisionResult] = useState<ProcessDisputeResponse | null>(null);
   const [showDecisionModal, setShowDecisionModal] = useState(false);
+  const [activeStreamTicketId, setActiveStreamTicketId] = useState<number | null>(null);
 
   useEffect(() => {
     async function fetchCustomers() {
@@ -157,6 +424,7 @@ export default function CustomerPortalPage() {
       setError(null);
       setDecisionResult(null);
       setShowDecisionModal(false);
+      setActiveStreamTicketId(null);
 
       const response = await fetch(`${API_BASE_URL}/api/disputes/process`, {
         method: "POST",
@@ -177,6 +445,7 @@ export default function CustomerPortalPage() {
 
       const data: ProcessDisputeResponse = await response.json();
       setDecisionResult(data);
+      setActiveStreamTicketId(data.ticket_id);
       setShowDecisionModal(true);
       setSelectedCustomerId("");
       setSelectedTransactionId("");
@@ -384,6 +653,7 @@ export default function CustomerPortalPage() {
           </div>
 
           <div className="space-y-6">
+            <LiveAiFeed activeTicketId={activeStreamTicketId} />
             {selectedCustomer && (
               <Card className="border-slate-200 shadow-sm">
                 <CardHeader>

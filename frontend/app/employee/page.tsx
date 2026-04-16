@@ -47,6 +47,7 @@ function getErrorMessage(errorData: ApiErrorResponse | null | undefined, fallbac
   return fallback;
 }
 
+
 // Function to get badge variant and color based on status
 function getStatusBadge(status: string) {
   switch (status) {

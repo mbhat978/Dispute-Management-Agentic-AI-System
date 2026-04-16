@@ -1,3 +1,7 @@
+# Initialize logging configuration FIRST before any other imports
+from config import setup_logging
+setup_logging()
+
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -6,8 +10,12 @@ from pydantic import BaseModel
 from datetime import datetime
 from typing import cast, Any, Optional
 from dotenv import load_dotenv
+from sse_starlette.sse import EventSourceResponse
+import asyncio
+import json
 import os
 import traceback
+from contextlib import suppress
 from loguru import logger
 
 # Load environment variables from .env file
@@ -36,6 +44,37 @@ app.add_middleware(
     allow_methods=["*"],  # Allow all HTTP methods
     allow_headers=["*"],  # Allow all headers
 )
+
+stream_subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
+STREAM_HEARTBEAT_SECONDS = 15
+
+
+def broadcast_stream_event(event_type: str, data: dict[str, Any]) -> None:
+    """
+    Fan out a structured SSE event payload to all active subscribers.
+    """
+    if not stream_subscribers:
+        return
+
+    payload = {
+        "event": event_type,
+        "data": json.dumps(
+            {
+                "timestamp": datetime.utcnow().isoformat(),
+                **data,
+            }
+        ),
+    }
+
+    stale_subscribers: list[asyncio.Queue[dict[str, Any]]] = []
+    for subscriber in stream_subscribers:
+        try:
+            subscriber.put_nowait(payload)
+        except asyncio.QueueFull:
+            stale_subscribers.append(subscriber)
+
+    for subscriber in stale_subscribers:
+        stream_subscribers.discard(subscriber)
 
 
 def build_error_response(
@@ -108,6 +147,63 @@ async def health_check():
     Health check endpoint.
     """
     return {"status": "healthy"}
+
+
+@app.get("/api/disputes/stream")
+async def stream_dispute_updates(request: Request):
+    """
+    Stream real-time AI/log updates to the frontend via server-sent events.
+    """
+    subscriber: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=200)
+    stream_subscribers.add(subscriber)
+
+    async def event_generator():
+        broadcast_stream_event(
+            "connection",
+            {
+                "message": "Live dispute stream connected",
+                "active_subscribers": len(stream_subscribers),
+            },
+        )
+
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+
+                try:
+                    payload = await asyncio.wait_for(
+                        subscriber.get(),
+                        timeout=STREAM_HEARTBEAT_SECONDS,
+                    )
+                    yield payload
+                except asyncio.TimeoutError:
+                    yield {
+                        "event": "heartbeat",
+                        "data": json.dumps(
+                            {
+                                "timestamp": datetime.utcnow().isoformat(),
+                                "message": "keep-alive",
+                            }
+                        ),
+                    }
+        finally:
+            stream_subscribers.discard(subscriber)
+            with suppress(asyncio.QueueFull):
+                subscriber.put_nowait(
+                    {
+                        "event": "disconnect",
+                        "data": json.dumps(
+                            {
+                                "timestamp": datetime.utcnow().isoformat(),
+                                "message": "Live dispute stream disconnected",
+                                "active_subscribers": len(stream_subscribers),
+                            }
+                        ),
+                    }
+                )
+
+    return EventSourceResponse(event_generator())
 
 
 @app.exception_handler(HTTPException)
@@ -740,13 +836,14 @@ class DisputeProcessRequest(BaseModel):
 @app.post("/api/disputes/process")
 async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(get_db)):
     """
-    Process a dispute ticket using the multi-agent AI system.
+    Process a dispute ticket using the multi-agent AI system with streaming.
     
     This endpoint:
     1. Creates a new dispute ticket in the database
     2. Initializes the DisputeState with the provided information
-    3. Invokes the LangGraph workflow with dynamic ReAct routing
-    4. Returns the final state with the decision and full audit trail
+    3. Streams through the LangGraph workflow with dynamic ReAct routing
+    4. Logs each agent's execution in real-time
+    5. Returns the final state with the decision and full audit trail
     
     Args:
         request: DisputeProcessRequest containing transaction_id, customer_id, and customer_query
@@ -787,6 +884,17 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
         logger.info("Transaction ID: %s", request.transaction_id)
         logger.info("Query: %s", request.customer_query)
         logger.info("%s", "=" * 80)
+
+        broadcast_stream_event(
+            "processing_started",
+            {
+                "ticket_id": new_ticket.id,
+                "customer_id": request.customer_id,
+                "transaction_id": request.transaction_id,
+                "message": f"Started processing dispute ticket #{new_ticket.id}",
+                "customer_query": request.customer_query,
+            },
+        )
         
         # Initialize the dispute state
         initial_state = initialize_dispute_state(
@@ -796,11 +904,68 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
             dispute_category="unknown"
         )
         
-        # Execute the LangGraph workflow so agents can route dynamically
-        final_state: DisputeState = cast(
-            DisputeState,
-            dispute_resolution_workflow.invoke(initial_state)
-        )
+        # Stream through the LangGraph workflow and watch agents think
+        final_state: Optional[DisputeState] = None
+        
+        logger.info("[STREAM] Starting asynchronous agent execution stream...")
+        logger.info("%s", "=" * 80)
+
+        async for chunk in dispute_resolution_workflow.astream(initial_state):
+            # Each chunk is a dict with node name as key and state as value
+            for node_name, node_state in chunk.items():
+                logger.info("[AGENT EXECUTION] Node: %s", node_name)
+                logger.info("  → Current State Keys: %s", list(node_state.keys()))
+
+                latest_audit_entry = None
+                if "audit_trail" in node_state and node_state["audit_trail"]:
+                    latest_audit_entry = node_state["audit_trail"][-1]
+
+                stream_payload = {
+                    "ticket_id": node_state.get("ticket_id"),
+                    "node": node_name,
+                    "message": latest_audit_entry or f"{node_name} updated workflow state",
+                    "state": {
+                        "dispute_category": node_state.get("dispute_category"),
+                        "final_decision": node_state.get("final_decision"),
+                        "triage_confidence": node_state.get("triage_confidence"),
+                        "investigation_confidence": node_state.get("investigation_confidence"),
+                        "decision_confidence": node_state.get("decision_confidence"),
+                        "audit_trail_count": len(node_state.get("audit_trail", [])),
+                        "gathered_data_keys": list(node_state.get("gathered_data", {}).keys()),
+                        "working_memory": node_state.get("working_memory", {}),
+                    },
+                }
+                broadcast_stream_event("agent_update", stream_payload)
+
+                # Log key state information
+                if "dispute_category" in node_state:
+                    logger.info("  → Dispute Category: %s", node_state["dispute_category"])
+
+                if "final_decision" in node_state and node_state["final_decision"]:
+                    logger.info("  → Final Decision: %s", node_state["final_decision"])
+
+                if "triage_confidence" in node_state and node_state["triage_confidence"]:
+                    logger.info("  → Triage Confidence: %.2f", node_state["triage_confidence"])
+
+                if "investigation_confidence" in node_state and node_state["investigation_confidence"]:
+                    logger.info("  → Investigation Confidence: %.2f", node_state["investigation_confidence"])
+
+                if "decision_confidence" in node_state and node_state["decision_confidence"]:
+                    logger.info("  → Decision Confidence: %.2f", node_state["decision_confidence"])
+
+                if "audit_trail" in node_state:
+                    logger.info("  → Audit Trail Entries: %s", len(node_state["audit_trail"]))
+
+                if "gathered_data" in node_state:
+                    logger.info("  → Gathered Data Keys: %s", list(node_state["gathered_data"].keys()))
+
+                logger.info("%s", "-" * 80)
+
+                # Keep track of the latest state
+                final_state = cast(DisputeState, node_state)
+        
+        if final_state is None:
+            raise ValueError("Workflow stream completed without producing a final state")
         
         logger.info("%s", "=" * 80)
         logger.info("[SUCCESS] DISPUTE PROCESSING COMPLETE")
@@ -809,7 +974,18 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
         logger.info("Category: %s", final_state["dispute_category"])
         logger.info("Audit Trail Entries: %s", len(final_state["audit_trail"]))
         logger.info("%s", "=" * 80)
-        
+
+        broadcast_stream_event(
+            "processing_completed",
+            {
+                "ticket_id": final_state["ticket_id"],
+                "message": f"Completed dispute ticket #{final_state['ticket_id']}",
+                "final_decision": final_state["final_decision"],
+                "dispute_category": final_state["dispute_category"],
+                "audit_trail": final_state["audit_trail"],
+            },
+        )
+
         # Return the final state
         return {
             "status": "success",
@@ -834,6 +1010,16 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
         raise
     except Exception as e:
         logger.exception("Error processing dispute: {}", str(e))
+        broadcast_stream_event(
+            "processing_failed",
+            {
+                "ticket_id": getattr(new_ticket, "id", None),
+                "message": "Dispute processing failed",
+                "error": str(e),
+                "customer_id": request.customer_id,
+                "transaction_id": request.transaction_id,
+            },
+        )
         raise_api_error(
             500,
             "Unable to process dispute.",

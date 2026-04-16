@@ -4,6 +4,7 @@ sqlalchemy
 pydantic
 python-multipart
 loguru==0.7.2
+sse-starlette
 
 # LangChain and LangGraph for agent orchestration - pinned for compatibility
 langgraph>=0.2.45

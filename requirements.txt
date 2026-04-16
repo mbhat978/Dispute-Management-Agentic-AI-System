@@ -4,6 +4,7 @@ sqlalchemy
 pydantic
 python-multipart
 loguru
+sse-starlette
 
 # LangChain and LangGraph for agent orchestration - pinned for compatibility
 langgraph
