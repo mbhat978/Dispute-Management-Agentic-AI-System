@@ -10,6 +10,7 @@ import asyncio
 import json
 from typing import Dict, Any
 from datetime import datetime
+from pathlib import Path
 from mcp.client.stdio import stdio_client, StdioServerParameters
 from mcp.client.session import ClientSession
 
@@ -26,10 +27,14 @@ async def _call_mcp_tool_async(tool_name: str, arguments: dict) -> Dict[str, Any
         Dict[str, Any]: Parsed result from the MCP server
     """
     # Set up server parameters to execute the core banking server
+    backend_dir = Path(__file__).resolve().parent
+    server_script = backend_dir / "mcp_servers" / "core_banking_server.py"
+
     server_params = StdioServerParameters(
         command="python",
-        args=["backend/mcp_servers/core_banking_server.py"],
-        env=None
+        args=[str(server_script)],
+        env=None,
+        cwd=str(backend_dir)
     )
     
     # Initialize connection and call the tool
@@ -91,7 +96,7 @@ def get_transaction_details(transaction_id: int) -> Dict[str, Any]:
         Dict[str, Any]: Transaction details including customer info, amount,
                        merchant name, status, and whether it's international.
     """
-    return call_mcp_tool('get_transaction_details', {'transaction_id': transaction_id})
+    return call_mcp_tool('get_transaction_details_tool', {'transaction_id': transaction_id})
 
 
 def get_customer_history(customer_id: int, limit: int = 5) -> Dict[str, Any]:
@@ -100,13 +105,13 @@ def get_customer_history(customer_id: int, limit: int = 5) -> Dict[str, Any]:
     
     Args:
         customer_id (int): The unique identifier of the customer.
-        limit (int, optional): Maximum number of transactions to return. 
+        limit (int, optional): Maximum number of transactions to return.
                               Defaults to 5.
         
     Returns:
         Dict[str, Any]: Customer information and list of recent transactions.
     """
-    return call_mcp_tool('get_customer_history', {
+    return call_mcp_tool('get_customer_history_tool', {
         'customer_id': customer_id,
         'limit': limit
     })
@@ -123,7 +128,7 @@ def check_atm_logs(transaction_id: int) -> Dict[str, Any]:
         Dict[str, Any]: ATM log information including status codes and
                        whether cash was dispensed or if there was a fault.
     """
-    return call_mcp_tool('check_atm_logs', {'transaction_id': transaction_id})
+    return call_mcp_tool('check_atm_logs_tool', {'transaction_id': transaction_id})
 
 
 def check_duplicate_transactions(
@@ -147,7 +152,7 @@ def check_duplicate_transactions(
     Returns:
         Dict[str, Any]: Information about duplicate transactions found.
     """
-    return call_mcp_tool('check_duplicate_transactions', {
+    return call_mcp_tool('check_duplicate_transactions_tool', {
         'customer_id': customer_id,
         'merchant_name': merchant_name,
         'amount': amount,
@@ -169,7 +174,7 @@ def block_card(customer_id: int, reason: str = "Suspected fraud") -> Dict[str, A
     Returns:
         Dict[str, Any]: Confirmation of card block with timestamp and reason.
     """
-    return call_mcp_tool('block_card', {
+    return call_mcp_tool('block_card_tool', {
         'customer_id': customer_id,
         'reason': reason
     })
@@ -186,13 +191,13 @@ def initiate_refund(
     Args:
         transaction_id (int): The unique identifier of the transaction to refund.
         amount (float): The amount to refund (can be partial or full).
-        reason (str, optional): The reason for the refund. 
+        reason (str, optional): The reason for the refund.
                                Defaults to "Approved dispute".
         
     Returns:
         Dict[str, Any]: Refund confirmation with processing time estimate.
     """
-    return call_mcp_tool('initiate_refund', {
+    return call_mcp_tool('initiate_refund_tool', {
         'transaction_id': transaction_id,
         'amount': amount,
         'reason': reason
@@ -210,7 +215,7 @@ def route_to_human(ticket_id: int, summary: str) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: Confirmation of routing with previous and new status.
     """
-    return call_mcp_tool('route_to_human', {
+    return call_mcp_tool('route_to_human_tool', {
         'ticket_id': ticket_id,
         'summary': summary
     })
@@ -226,7 +231,7 @@ def get_loan_details(customer_id: int) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: Loan information including EMI amount and outstanding balance.
     """
-    return call_mcp_tool('get_loan_details', {'customer_id': customer_id})
+    return call_mcp_tool('get_loan_details_tool', {'customer_id': customer_id})
 
 
 def check_merchant_refund_status(transaction_id: int) -> Dict[str, Any]:
@@ -239,7 +244,7 @@ def check_merchant_refund_status(transaction_id: int) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: Refund status information and recommendations.
     """
-    return call_mcp_tool('check_merchant_refund_status', {'transaction_id': transaction_id})
+    return call_mcp_tool('check_merchant_refund_status_tool', {'transaction_id': transaction_id})
 
 
 # Helper function for agent introspection

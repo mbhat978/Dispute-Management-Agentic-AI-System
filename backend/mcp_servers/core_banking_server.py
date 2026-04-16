@@ -9,8 +9,12 @@ from banking_tools import (
     get_transaction_details,
     get_customer_history,
     check_atm_logs,
+    check_duplicate_transactions,
     block_card,
-    initiate_refund
+    initiate_refund,
+    route_to_human,
+    get_loan_details,
+    check_merchant_refund_status
 )
 
 
@@ -63,6 +67,32 @@ def check_atm_logs_tool(transaction_id: int) -> dict:
 
 
 @mcp.tool()
+def check_duplicate_transactions_tool(
+    customer_id: int,
+    merchant_name: str,
+    amount: float,
+    date: str,
+    time_window_hours: int = 24
+) -> dict:
+    """
+    Check for duplicate transactions within a time window.
+    
+    Args:
+        customer_id: The unique identifier of the customer
+        merchant_name: The name of the merchant to search for
+        amount: The transaction amount to match
+        date: The reference date/time for the search window (ISO format)
+        time_window_hours: Hours before and after the reference date to search (default: 24)
+        
+    Returns:
+        Dictionary containing information about duplicate transactions found
+    """
+    from datetime import datetime
+    date_obj = datetime.fromisoformat(date)
+    return check_duplicate_transactions(customer_id, merchant_name, amount, date_obj, time_window_hours)
+
+
+@mcp.tool()
 def block_card_tool(customer_id: int, reason: str = "Suspected fraud") -> dict:
     """
     Block a customer's card due to suspected fraud or security concerns.
@@ -97,5 +127,50 @@ def initiate_refund_tool(
     return initiate_refund(transaction_id, amount, reason)
 
 
+@mcp.tool()
+def route_to_human_tool(ticket_id: int, summary: str) -> dict:
+    """
+    Route a dispute ticket to human review.
+    
+    Args:
+        ticket_id: The unique identifier of the dispute ticket
+        summary: A summary explaining why human review is required
+        
+    Returns:
+        Dictionary containing confirmation of routing with previous and new status
+    """
+    return route_to_human(ticket_id, summary)
+
+
+@mcp.tool()
+def get_loan_details_tool(customer_id: int) -> dict:
+    """
+    Retrieve the customer's loan EMI schedule and outstanding balance.
+    
+    Args:
+        customer_id: The unique identifier of the customer
+        
+    Returns:
+        Dictionary containing loan information including EMI amount and outstanding balance
+    """
+    return get_loan_details(customer_id)
+
+
+@mcp.tool()
+def check_merchant_refund_status_tool(transaction_id: int) -> dict:
+    """
+    Check the refund status with the merchant/payment gateway.
+    
+    Args:
+        transaction_id: The unique identifier of the transaction
+        
+    Returns:
+        Dictionary containing refund status information and recommendations
+    """
+    return check_merchant_refund_status(transaction_id)
+
+
 if __name__ == "__main__":
     mcp.run()
+
+# Made with Bob

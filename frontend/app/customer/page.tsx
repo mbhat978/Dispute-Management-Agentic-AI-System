@@ -132,77 +132,116 @@ function LiveAiFeed({ activeTicketId }: { activeTicketId: number | null }) {
   const [connectionStatus, setConnectionStatus] = useState<"idle" | "connecting" | "connected" | "disconnected">("idle");
 
   useEffect(() => {
-    if (!activeTicketId) {
-      setConnectionStatus("idle");
-      setEvents([]);
-      return;
-    }
-
     setConnectionStatus("connecting");
-    setEvents([]);
+    console.log("[LiveAiFeed] Connecting to SSE stream...");
 
-    const eventSource = new EventSource(`${API_BASE_URL}/api/disputes/stream`);
+    let eventSource: EventSource | null = null;
+    let reconnectTimeout: NodeJS.Timeout | null = null;
 
-    const appendEvent = (eventType: string, rawData: string) => {
+    const connect = () => {
       try {
-        const parsed = JSON.parse(rawData) as {
-          timestamp?: string;
-          message?: string;
-          ticket_id?: number | null;
-          node?: string | null;
-          final_decision?: string | null;
-          dispute_category?: string | null;
-          state?: LiveFeedState;
+        eventSource = new EventSource(`${API_BASE_URL}/api/disputes/stream`);
+
+        const appendEvent = (eventType: string, rawData: string) => {
+          try {
+            // Filter out heartbeat events from UI feed
+            if (eventType === "heartbeat") {
+              return;
+            }
+
+            const parsed = JSON.parse(rawData) as {
+              timestamp?: string;
+              message?: string;
+              ticket_id?: number | null;
+              node?: string | null;
+              agent_name?: string | null;
+              activity_summary?: string | null;
+              final_decision?: string | null;
+              dispute_category?: string | null;
+              state?: LiveFeedState;
+            };
+
+            console.log(`[LiveAiFeed] Received ${eventType}:`, parsed);
+
+            if (activeTicketId != null && parsed.ticket_id != null && parsed.ticket_id !== activeTicketId) {
+              console.log(`[LiveAiFeed] Filtering out event for ticket ${parsed.ticket_id} (active: ${activeTicketId})`);
+              return;
+            }
+
+            setEvents((current) => {
+              const nextEvent: LiveFeedEvent = {
+                id: `${eventType}-${parsed.timestamp ?? Date.now()}-${current.length}`,
+                timestamp: parsed.timestamp ?? new Date().toISOString(),
+                eventType,
+                message: parsed.message ?? "AI workflow update received",
+                ticket_id: parsed.ticket_id,
+                node: parsed.node,
+                final_decision: parsed.final_decision ?? parsed.state?.final_decision ?? null,
+                dispute_category: parsed.dispute_category ?? parsed.state?.dispute_category ?? null,
+                state: parsed.state,
+              };
+
+              if (activeTicketId == null && parsed.ticket_id == null && eventType !== "connection") {
+                console.log(`[LiveAiFeed] Filtering out ${eventType} event (no active ticket)`);
+                return current;
+              }
+
+              console.log(`[LiveAiFeed] Adding event to feed:`, nextEvent);
+              return [nextEvent, ...current].slice(0, 30);
+            });
+          } catch (streamError) {
+            console.error("[LiveAiFeed] Failed to parse event:", streamError, rawData);
+          }
         };
 
-        if (parsed.ticket_id != null && parsed.ticket_id !== activeTicketId) {
-          return;
-        }
+        const registerEventType = (eventType: string) => {
+          eventSource?.addEventListener(eventType, (event) => {
+            setConnectionStatus("connected");
+            appendEvent(eventType, (event as MessageEvent).data);
+          });
+        };
 
-        setEvents((current) => {
-          const nextEvent: LiveFeedEvent = {
-            id: `${eventType}-${parsed.timestamp ?? Date.now()}-${current.length}`,
-            timestamp: parsed.timestamp ?? new Date().toISOString(),
-            eventType,
-            message: parsed.message ?? "AI workflow update received",
-            ticket_id: parsed.ticket_id,
-            node: parsed.node,
-            final_decision: parsed.final_decision ?? parsed.state?.final_decision ?? null,
-            dispute_category: parsed.dispute_category ?? parsed.state?.dispute_category ?? null,
-            state: parsed.state,
-          };
+        registerEventType("connection");
+        registerEventType("processing_started");
+        registerEventType("agent_update");
+        registerEventType("processing_completed");
+        registerEventType("processing_failed");
+        registerEventType("heartbeat");
 
-          return [nextEvent, ...current].slice(0, 30);
-        });
-      } catch (streamError) {
-        console.error("Failed to parse live feed event:", streamError, rawData);
+        eventSource.onopen = () => {
+          console.log("[LiveAiFeed] SSE connection opened successfully");
+          setConnectionStatus("connected");
+        };
+
+        eventSource.onerror = (error) => {
+          console.error("[LiveAiFeed] SSE connection error:", {
+            readyState: eventSource?.readyState,
+            url: `${API_BASE_URL}/api/disputes/stream`,
+            error: error
+          });
+          setConnectionStatus("disconnected");
+          
+          // Close the failed connection
+          if (eventSource) {
+            eventSource.close();
+          }
+        };
+      } catch (err) {
+        console.error("[LiveAiFeed] Failed to create EventSource:", err);
+        setConnectionStatus("disconnected");
       }
     };
 
-    const registerEventType = (eventType: string) => {
-      eventSource.addEventListener(eventType, (event) => {
-        setConnectionStatus("connected");
-        appendEvent(eventType, (event as MessageEvent).data);
-      });
-    };
-
-    registerEventType("connection");
-    registerEventType("processing_started");
-    registerEventType("agent_update");
-    registerEventType("processing_completed");
-    registerEventType("processing_failed");
-    registerEventType("heartbeat");
-
-    eventSource.onopen = () => {
-      setConnectionStatus("connected");
-    };
-
-    eventSource.onerror = () => {
-      setConnectionStatus("disconnected");
-    };
+    connect();
 
     return () => {
-      eventSource.close();
+      console.log("[LiveAiFeed] Cleaning up SSE connection");
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+      }
+      if (eventSource) {
+        eventSource.close();
+      }
       setConnectionStatus("disconnected");
     };
   }, [activeTicketId]);
@@ -424,7 +463,6 @@ export default function CustomerPortalPage() {
       setError(null);
       setDecisionResult(null);
       setShowDecisionModal(false);
-      setActiveStreamTicketId(null);
 
       const response = await fetch(`${API_BASE_URL}/api/disputes/process`, {
         method: "POST",
@@ -444,8 +482,8 @@ export default function CustomerPortalPage() {
       }
 
       const data: ProcessDisputeResponse = await response.json();
-      setDecisionResult(data);
       setActiveStreamTicketId(data.ticket_id);
+      setDecisionResult(data);
       setShowDecisionModal(true);
       setSelectedCustomerId("");
       setSelectedTransactionId("");
@@ -654,6 +692,7 @@ export default function CustomerPortalPage() {
 
           <div className="space-y-6">
             <LiveAiFeed activeTicketId={activeStreamTicketId} />
+
             {selectedCustomer && (
               <Card className="border-slate-200 shadow-sm">
                 <CardHeader>

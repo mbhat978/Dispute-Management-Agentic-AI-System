@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Brain, Radio, WifiOff } from "lucide-react";
 
 // Define the Dispute type based on our API response
 interface Dispute {
@@ -77,7 +78,10 @@ export default function DashboardPage() {
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [agentLogs, setAgentLogs] = useState<string[]>([]);
+  const [streamConnected, setStreamConnected] = useState(false);
 
+  // Fetch disputes and analytics data
   useEffect(() => {
     async function fetchData() {
       try {
@@ -111,6 +115,89 @@ export default function DashboardPage() {
     }
 
     fetchData();
+  }, []);
+
+  // Connect to the real-time agent log stream
+  useEffect(() => {
+    const eventSource = new EventSource("http://localhost:8000/api/disputes/stream");
+    
+    eventSource.onopen = () => {
+      console.log("[Employee Dashboard] SSE connection opened");
+      setStreamConnected(true);
+    };
+    
+    // Register event handlers for different event types
+    const handleAgentUpdate = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        const timestamp = new Date().toLocaleTimeString();
+        
+        // Format agent activity log
+        let logMessage = "";
+        if (data.agent_name) {
+          logMessage = `[${timestamp}] 🤖 ${data.agent_name}: ${data.message}`;
+          if (data.activity_summary) {
+            logMessage += ` | ${data.activity_summary}`;
+          }
+        } else {
+          logMessage = `[${timestamp}] ${data.message || 'Agent activity update'}`;
+        }
+        
+        setAgentLogs((prevLogs) => [...prevLogs, logMessage].slice(-50)); // Keep last 50 logs
+      } catch (err) {
+        console.error("[Employee Dashboard] Error parsing agent_update:", err);
+      }
+    };
+    
+    const handleProcessingStarted = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        const timestamp = new Date().toLocaleTimeString();
+        const logMessage = `[${timestamp}] 🚀 Started processing dispute #${data.ticket_id} - ${data.customer_query}`;
+        setAgentLogs((prevLogs) => [...prevLogs, logMessage].slice(-50));
+      } catch (err) {
+        console.error("[Employee Dashboard] Error parsing processing_started:", err);
+      }
+    };
+    
+    const handleProcessingCompleted = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        const timestamp = new Date().toLocaleTimeString();
+        const logMessage = `[${timestamp}] ✅ Completed dispute #${data.ticket_id} - Decision: ${data.final_decision?.toUpperCase()}`;
+        setAgentLogs((prevLogs) => [...prevLogs, logMessage].slice(-50));
+      } catch (err) {
+        console.error("[Employee Dashboard] Error parsing processing_completed:", err);
+      }
+    };
+    
+    const handleProcessingFailed = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        const timestamp = new Date().toLocaleTimeString();
+        const logMessage = `[${timestamp}] ❌ Failed processing dispute #${data.ticket_id} - ${data.error}`;
+        setAgentLogs((prevLogs) => [...prevLogs, logMessage].slice(-50));
+      } catch (err) {
+        console.error("[Employee Dashboard] Error parsing processing_failed:", err);
+      }
+    };
+    
+    // Register specific event listeners (heartbeat is intentionally not registered)
+    eventSource.addEventListener("agent_update", handleAgentUpdate);
+    eventSource.addEventListener("processing_started", handleProcessingStarted);
+    eventSource.addEventListener("processing_completed", handleProcessingCompleted);
+    eventSource.addEventListener("processing_failed", handleProcessingFailed);
+    
+    eventSource.onerror = (err) => {
+      console.error("[Employee Dashboard] SSE error:", err);
+      setStreamConnected(false);
+    };
+    
+    // Cleanup function to close the connection when component unmounts
+    return () => {
+      console.log("[Employee Dashboard] Closing SSE connection");
+      eventSource.close();
+    };
   }, []);
 
   return (
@@ -285,6 +372,52 @@ export default function DashboardPage() {
               </Table>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Real-Time AI Agent Logs */}
+      <Card className="border-2 border-blue-500/20">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Brain className="h-5 w-5 text-blue-500" />
+              <CardTitle>AI Agent Activity Stream</CardTitle>
+            </div>
+            <div className="flex items-center gap-2">
+              {streamConnected ? (
+                <>
+                  <Radio className="h-4 w-4 text-green-500 animate-pulse" />
+                  <span className="text-xs text-green-500 font-medium">Live</span>
+                </>
+              ) : (
+                <>
+                  <WifiOff className="h-4 w-4 text-red-500" />
+                  <span className="text-xs text-red-500 font-medium">Disconnected</span>
+                </>
+              )}
+            </div>
+          </div>
+          <CardDescription>
+            Watch AI agents think and process disputes in real-time
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="bg-black rounded-lg p-4 h-96 overflow-y-auto font-mono text-sm">
+            {agentLogs.length === 0 ? (
+              <div className="flex items-center justify-center h-full text-green-400">
+                <p>Waiting for agent activity...</p>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {agentLogs.map((log, index) => (
+                  <div key={index} className="text-green-400">
+                    <span className="text-gray-500">[{new Date().toLocaleTimeString()}]</span>{" "}
+                    {log}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 

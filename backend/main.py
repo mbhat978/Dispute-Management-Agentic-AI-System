@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from sse_starlette.sse import EventSourceResponse
 import asyncio
 import json
+import sys
 import os
 import traceback
 from contextlib import suppress
@@ -43,31 +44,50 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],  # Allow all HTTP methods
     allow_headers=["*"],  # Allow all headers
+    expose_headers=["*"],  # Expose all headers for SSE
 )
 
 stream_subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
 STREAM_HEARTBEAT_SECONDS = 15
 
+# Thread-safe logging queue and main loop for SSE streaming
+log_queue = asyncio.Queue()
+main_loop = None
+
+class SSELoggerSink:
+    """Thread-safe Loguru sink that pushes logs to the main asyncio event loop."""
+    def write(self, message):
+        if main_loop and main_loop.is_running():
+            log_text = message.record["message"]
+            main_loop.call_soon_threadsafe(log_queue.put_nowait, log_text)
+
 
 def broadcast_stream_event(event_type: str, data: dict[str, Any]) -> None:
     """
-    Fan out a structured SSE event payload to all active subscribers.
+    Fan out a structured SSE event payload to all active subscribers and mirror it to logs.
     """
+    payload_data = {
+        "timestamp": datetime.utcnow().isoformat(),
+        **data,
+    }
+
+    ticket_id = payload_data.get("ticket_id")
+    node = payload_data.get("node")
+    message = payload_data.get("message", "")
+    logger.info(
+        f"[STREAM EVENT] type={event_type} | ticket_id={ticket_id} | node={node or '-'} | message={message}"
+    )
+
     if not stream_subscribers:
         return
 
     payload = {
         "event": event_type,
-        "data": json.dumps(
-            {
-                "timestamp": datetime.utcnow().isoformat(),
-                **data,
-            }
-        ),
+        "data": json.dumps(payload_data),
     }
 
     stale_subscribers: list[asyncio.Queue[dict[str, Any]]] = []
-    for subscriber in stream_subscribers:
+    for subscriber in list(stream_subscribers):
         try:
             subscriber.put_nowait(payload)
         except asyncio.QueueFull:
@@ -122,8 +142,16 @@ def raise_api_error(
 async def startup_event():
     """
     Event handler that runs on application startup.
-    Creates database tables if they don't exist.
+    Creates database tables and configures thread-safe logging.
     """
+    global main_loop
+    main_loop = asyncio.get_running_loop()
+    
+    # Configure Loguru with both terminal and SSE sinks
+    logger.remove()
+    logger.add(sys.stdout, colorize=True, enqueue=True)  # Terminal stream
+    logger.add(SSELoggerSink(), format="{message}")      # UI Stream
+    
     logger.info("Creating database tables...")
     Base.metadata.create_all(bind=engine)
     logger.info("Database tables created successfully!")
@@ -154,31 +182,51 @@ async def stream_dispute_updates(request: Request):
     """
     Stream real-time AI/log updates to the frontend via server-sent events.
     """
+    logger.info(f"[SSE] New connection request from: {request.client}")
+    
     subscriber: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=200)
     stream_subscribers.add(subscriber)
+    
+    logger.info(f"[SSE] New subscriber connected. Total subscribers: {len(stream_subscribers)}")
 
     async def event_generator():
-        broadcast_stream_event(
-            "connection",
-            {
-                "message": "Live dispute stream connected",
-                "active_subscribers": len(stream_subscribers),
-            },
-        )
+        try:
+            # Send initial connection event
+            connection_payload = {
+                "event": "connection",
+                "data": json.dumps(
+                    {
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "message": "Live dispute stream connected",
+                        "active_subscribers": len(stream_subscribers),
+                    }
+                ),
+            }
+            subscriber.put_nowait(connection_payload)
+            logger.info("[SSE] Connection event queued")
+        except asyncio.QueueFull:
+            logger.warning("[SSE] Queue full on connection, discarding subscriber")
+            stream_subscribers.discard(subscriber)
+            return
 
         try:
             while True:
+                # Check if client disconnected
                 if await request.is_disconnected():
+                    logger.info("[SSE] Client disconnected")
                     break
 
                 try:
+                    # Wait for events with timeout for heartbeat
                     payload = await asyncio.wait_for(
                         subscriber.get(),
                         timeout=STREAM_HEARTBEAT_SECONDS,
                     )
+                    # Send payload without logging (reduces noise)
                     yield payload
                 except asyncio.TimeoutError:
-                    yield {
+                    # Send heartbeat to keep connection alive (silent - no logging)
+                    heartbeat_payload = {
                         "event": "heartbeat",
                         "data": json.dumps(
                             {
@@ -187,8 +235,10 @@ async def stream_dispute_updates(request: Request):
                             }
                         ),
                     }
+                    yield heartbeat_payload
         finally:
             stream_subscribers.discard(subscriber)
+            logger.info(f"[SSE] Subscriber disconnected. Remaining subscribers: {len(stream_subscribers)}")
             with suppress(asyncio.QueueFull):
                 subscriber.put_nowait(
                     {
@@ -203,6 +253,25 @@ async def stream_dispute_updates(request: Request):
                     }
                 )
 
+    return EventSourceResponse(event_generator())
+
+
+@app.get("/api/disputes/logs/stream")
+async def stream_logs(request: Request):
+    """
+    Stream real-time logs from the log_queue via Server-Sent Events.
+    """
+    async def event_generator():
+        while True:
+            if await request.is_disconnected():
+                break
+            try:
+                # Wait for a log with a 1-second timeout to allow disconnect checks
+                log_msg = await asyncio.wait_for(log_queue.get(), timeout=1.0)
+                yield {"data": json.dumps({"log": log_msg})}
+            except asyncio.TimeoutError:
+                yield {"data": json.dumps({"ping": "keep-alive"})}
+                
     return EventSourceResponse(event_generator())
 
 
@@ -834,7 +903,7 @@ class DisputeProcessRequest(BaseModel):
 
 
 @app.post("/api/disputes/process")
-async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(get_db)):
+def process_dispute(request: DisputeProcessRequest, db: Session = Depends(get_db)):
     """
     Process a dispute ticket using the multi-agent AI system with streaming.
     
@@ -877,13 +946,13 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
         db.commit()
         db.refresh(new_ticket)
         
-        logger.info("%s", "=" * 80)
-        logger.info("[PROCESSING] DISPUTE TICKET #%s", new_ticket.id)
-        logger.info("%s", "=" * 80)
-        logger.info("Customer ID: %s", request.customer_id)
-        logger.info("Transaction ID: %s", request.transaction_id)
-        logger.info("Query: %s", request.customer_query)
-        logger.info("%s", "=" * 80)
+        logger.info("=" * 80)
+        logger.info(f"[PROCESSING] DISPUTE TICKET #{new_ticket.id}")
+        logger.info("=" * 80)
+        logger.info(f"Customer ID: {request.customer_id}")
+        logger.info(f"Transaction ID: {request.transaction_id}")
+        logger.info(f"Query: {request.customer_query}")
+        logger.info("=" * 80)
 
         broadcast_stream_event(
             "processing_started",
@@ -908,101 +977,120 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
         final_state: Optional[DisputeState] = None
         
         logger.info("[STREAM] Starting asynchronous agent execution stream...")
-        logger.info("%s", "=" * 80)
+        logger.info("=" * 80)
 
-        async for chunk in dispute_resolution_workflow.astream(initial_state):
-            # Each chunk is a dict with node name as key and state as value
-            for node_name, node_state in chunk.items():
-                logger.info("[AGENT EXECUTION] Node: %s", node_name)
-                logger.info("  → Current State Keys: %s", list(node_state.keys()))
+        # Define async function to run the workflow stream
+        async def run_workflow_stream():
+            nonlocal final_state
+            async for chunk in dispute_resolution_workflow.astream(initial_state):
+                # Each chunk is a dict with node name as key and state as value
+                for node_name, node_state in chunk.items():
+                    # Create agent-friendly name mapping
+                    agent_names = {
+                        "triage": "Triage Agent",
+                        "clarification": "Clarification Agent",
+                        "investigator": "Investigation Agent",
+                        "re_investigate": "Re-Investigation Coordinator",
+                        "decision": "Decision Agent"
+                    }
+                    
+                    agent_display_name = agent_names.get(node_name, node_name)
+                    
+                    logger.info(f"[AGENT CALLED] {agent_display_name} (node: {node_name})")
+                    
+                    # Get the latest audit entry to show what the agent is doing
+                    latest_audit_entry = None
+                    if "audit_trail" in node_state and node_state["audit_trail"]:
+                        latest_audit_entry = node_state["audit_trail"][-1]
+                        logger.info(f"[AGENT ACTIVITY] {latest_audit_entry}")
 
-                latest_audit_entry = None
-                if "audit_trail" in node_state and node_state["audit_trail"]:
-                    latest_audit_entry = node_state["audit_trail"][-1]
+                    # Create detailed activity message
+                    activity_details = []
+                    if "dispute_category" in node_state and node_state["dispute_category"]:
+                        activity_details.append(f"Category: {node_state['dispute_category']}")
+                    
+                    if "triage_confidence" in node_state and node_state["triage_confidence"]:
+                        activity_details.append(f"Triage Confidence: {node_state['triage_confidence']:.2%}")
+                    
+                    if "investigation_confidence" in node_state and node_state["investigation_confidence"]:
+                        activity_details.append(f"Investigation Confidence: {node_state['investigation_confidence']:.2%}")
+                    
+                    if "decision_confidence" in node_state and node_state["decision_confidence"]:
+                        activity_details.append(f"Decision Confidence: {node_state['decision_confidence']:.2%}")
+                    
+                    if "final_decision" in node_state and node_state["final_decision"]:
+                        activity_details.append(f"Decision: {node_state['final_decision'].upper()}")
+                    
+                    if activity_details:
+                        logger.info(f"[AGENT STATUS] {' | '.join(activity_details)}")
 
-                stream_payload = {
-                    "ticket_id": node_state.get("ticket_id"),
-                    "node": node_name,
-                    "message": latest_audit_entry or f"{node_name} updated workflow state",
-                    "state": {
-                        "dispute_category": node_state.get("dispute_category"),
-                        "final_decision": node_state.get("final_decision"),
-                        "triage_confidence": node_state.get("triage_confidence"),
-                        "investigation_confidence": node_state.get("investigation_confidence"),
-                        "decision_confidence": node_state.get("decision_confidence"),
-                        "audit_trail_count": len(node_state.get("audit_trail", [])),
-                        "gathered_data_keys": list(node_state.get("gathered_data", {}).keys()),
-                        "working_memory": node_state.get("working_memory", {}),
-                    },
-                }
-                broadcast_stream_event("agent_update", stream_payload)
+                    # Prepare enhanced stream payload with agent information
+                    stream_payload = {
+                        "ticket_id": node_state.get("ticket_id"),
+                        "node": node_name,
+                        "agent_name": agent_display_name,
+                        "message": latest_audit_entry or f"{agent_display_name} is processing the dispute",
+                        "activity_summary": " | ".join(activity_details) if activity_details else None,
+                        "state": {
+                            "dispute_category": node_state.get("dispute_category"),
+                            "final_decision": node_state.get("final_decision"),
+                            "triage_confidence": node_state.get("triage_confidence"),
+                            "investigation_confidence": node_state.get("investigation_confidence"),
+                            "decision_confidence": node_state.get("decision_confidence"),
+                            "audit_trail_count": len(node_state.get("audit_trail", [])),
+                            "gathered_data_keys": list(node_state.get("gathered_data", {}).keys()),
+                            "working_memory": node_state.get("working_memory", {}),
+                        },
+                    }
+                    broadcast_stream_event("agent_update", stream_payload)
 
-                # Log key state information
-                if "dispute_category" in node_state:
-                    logger.info("  → Dispute Category: %s", node_state["dispute_category"])
+                    logger.info("-" * 80)
 
-                if "final_decision" in node_state and node_state["final_decision"]:
-                    logger.info("  → Final Decision: %s", node_state["final_decision"])
-
-                if "triage_confidence" in node_state and node_state["triage_confidence"]:
-                    logger.info("  → Triage Confidence: %.2f", node_state["triage_confidence"])
-
-                if "investigation_confidence" in node_state and node_state["investigation_confidence"]:
-                    logger.info("  → Investigation Confidence: %.2f", node_state["investigation_confidence"])
-
-                if "decision_confidence" in node_state and node_state["decision_confidence"]:
-                    logger.info("  → Decision Confidence: %.2f", node_state["decision_confidence"])
-
-                if "audit_trail" in node_state:
-                    logger.info("  → Audit Trail Entries: %s", len(node_state["audit_trail"]))
-
-                if "gathered_data" in node_state:
-                    logger.info("  → Gathered Data Keys: %s", list(node_state["gathered_data"].keys()))
-
-                logger.info("%s", "-" * 80)
-
-                # Keep track of the latest state
-                final_state = cast(DisputeState, node_state)
+                    # Keep track of the latest state
+                    final_state = cast(DisputeState, node_state)
+        
+        # Run the async workflow in a new event loop (worker thread)
+        asyncio.run(run_workflow_stream())
         
         if final_state is None:
             raise ValueError("Workflow stream completed without producing a final state")
         
-        logger.info("%s", "=" * 80)
+        logger.info("=" * 80)
         logger.info("[SUCCESS] DISPUTE PROCESSING COMPLETE")
-        logger.info("%s", "=" * 80)
-        logger.info("Final Decision: %s", final_state["final_decision"].upper())
-        logger.info("Category: %s", final_state["dispute_category"])
-        logger.info("Audit Trail Entries: %s", len(final_state["audit_trail"]))
-        logger.info("%s", "=" * 80)
+        logger.info("=" * 80)
+        logger.info(f"Final Decision: {final_state.get('final_decision', 'UNKNOWN').upper()}")
+        logger.info(f"Category: {final_state.get('dispute_category', 'unknown')}")
+        logger.info(f"Audit Trail Entries: {len(final_state.get('audit_trail', []))}")
+        logger.info("=" * 80)
 
         broadcast_stream_event(
             "processing_completed",
             {
-                "ticket_id": final_state["ticket_id"],
-                "message": f"Completed dispute ticket #{final_state['ticket_id']}",
-                "final_decision": final_state["final_decision"],
-                "dispute_category": final_state["dispute_category"],
-                "audit_trail": final_state["audit_trail"],
+                "ticket_id": new_ticket.id,
+                "message": f"Completed dispute ticket #{new_ticket.id}",
+                "final_decision": final_state.get("final_decision", "unknown"),
+                "dispute_category": final_state.get("dispute_category", "unknown"),
+                "audit_trail": final_state.get("audit_trail", []),
             },
         )
 
         # Return the final state
         return {
             "status": "success",
-            "ticket_id": final_state["ticket_id"],
-            "customer_id": final_state["customer_id"],
-            "customer_query": final_state["customer_query"],
-            "dispute_category": final_state["dispute_category"],
-            "final_decision": final_state["final_decision"],
-            "gathered_data": final_state["gathered_data"],
-            "audit_trail": final_state["audit_trail"],
+            "ticket_id": new_ticket.id,
+            "customer_id": request.customer_id,
+            "customer_query": final_state.get("customer_query", ""),
+            "dispute_category": final_state.get("dispute_category", "unknown"),
+            "final_decision": final_state.get("final_decision", "unknown"),
+            "gathered_data": final_state.get("gathered_data", {}),
+            "audit_trail": final_state.get("audit_trail", []),
             "triage_confidence": final_state.get("triage_confidence", 0.0),
             "investigation_confidence": final_state.get("investigation_confidence", 0.0),
             "decision_confidence": final_state.get("decision_confidence", 0.0),
             "investigation_summary": final_state.get("investigation_summary", ""),
             "decision_reasoning": final_state.get("decision_reasoning", {}),
             "working_memory": final_state.get("working_memory", {}),
-            "message": f"Dispute processed successfully. Decision: {final_state['final_decision']}"
+            "message": f"Dispute processed successfully. Decision: {final_state.get('final_decision', 'unknown')}"
         }
         
     except HTTPException:
