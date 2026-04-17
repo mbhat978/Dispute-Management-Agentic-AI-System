@@ -11,6 +11,7 @@ langgraph>=0.2.45
 langchain>=0.3.7
 langchain-openai>=0.2.11
 langchain-core>=0.3.21
+langsmith
 openai>=1.54.0,<2.0.0
 httpx>=0.27.0,<1.0.0
 

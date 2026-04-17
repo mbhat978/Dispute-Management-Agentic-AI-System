@@ -1,4 +1,9 @@
-# Initialize logging configuration FIRST before any other imports
+# Load environment variables FIRST before any other imports
+# This ensures LangSmith tracing is configured before LangGraph initializes
+from dotenv import load_dotenv
+load_dotenv()
+
+# Initialize logging configuration
 from config import setup_logging
 setup_logging()
 
@@ -9,7 +14,6 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import datetime
 from typing import cast, Any, Optional
-from dotenv import load_dotenv
 from sse_starlette.sse import EventSourceResponse
 import asyncio
 import json
@@ -18,9 +22,6 @@ import os
 import traceback
 from contextlib import suppress
 from loguru import logger
-
-# Load environment variables from .env file
-load_dotenv()
 
 from database import engine, get_db, Base
 import models
