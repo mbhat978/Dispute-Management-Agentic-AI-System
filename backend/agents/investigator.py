@@ -14,15 +14,11 @@ from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 import sys
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# Add backend directory to path to import mcp_client
-backend_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if backend_path not in sys.path:
-    sys.path.insert(0, backend_path)
-
-import mcp_client as banking_tools
-import models
-from database import SessionLocal
+from .. import mcp_client as banking_tools
+from .. import models
+from ..database import SessionLocal
 from .state import DisputeState
 from .config import OPENAI_API_KEY, INVESTIGATOR_MODEL, INVESTIGATOR_TEMPERATURE
 
@@ -84,38 +80,62 @@ def investigator_node(state: DisputeState) -> Dict[str, Any]:
             f"Planned steps: {[step['tool'] for step in plan]}"
         )
 
+        # Log parallel execution start
+        tool_names = [step["tool"] for step in plan]
+        logger.info(f"[INVESTIGATOR AGENT] Executing tools in parallel: {tool_names}")
+        
+        # Execute all tools in parallel using ThreadPoolExecutor
         executed_steps: List[str] = []
-        for step in plan:
+        
+        def execute_step(step: Dict[str, Any]) -> Tuple[str, str, Dict[str, Any], Dict[str, Any]]:
+            """Execute a single tool step and return results."""
             tool_name = step["tool"]
             tool_input = step["input"]
             data_key = step["data_key"]
-
-            logger.info(f"[INVESTIGATOR AGENT] Thought: need to use {tool_name}")
             
+            logger.info(f"[INVESTIGATOR AGENT] Thought: need to use {tool_name}")
             logger.debug(
                 f"[INVESTIGATOR AGENT] action=tool_call | tool={tool_name} | "
                 f"input={json.dumps(tool_input, default=str)}"
             )
-            
             logger.info(f"[INVESTIGATOR AGENT] Action: calling {tool_name} with {tool_input}")
             
-            audit_trail.append(
-                f"Investigator Agent ACTION: Calling {tool_name} with input {json.dumps(tool_input, default=str)}"
-            )
-
             observation = _execute_tool(tool_name, tool_input)
-            gathered_data[data_key] = observation
-            executed_steps.append(tool_name)
-
-            logger.info(f"[INVESTIGATOR AGENT] Observation: {tool_name} returned data")
             
+            logger.info(f"[INVESTIGATOR AGENT] Observation: {tool_name} returned data")
             logger.info(
                 f"[INVESTIGATOR AGENT] observation | tool={tool_name} | "
                 f"output={json.dumps(observation, default=str)}"
             )
-            audit_trail.append(
-                f"Investigator Agent OBSERVATION: {tool_name} returned {json.dumps(observation, default=str)}"
-            )
+            
+            return tool_name, data_key, tool_input, observation
+        
+        # Execute all steps in parallel
+        with ThreadPoolExecutor(max_workers=len(plan)) as executor:
+            # Submit all tasks
+            future_to_step = {executor.submit(execute_step, step): step for step in plan}
+            
+            # Collect results as they complete
+            for future in as_completed(future_to_step):
+                try:
+                    tool_name, data_key, tool_input, observation = future.result()
+                    
+                    # Store results
+                    gathered_data[data_key] = observation
+                    executed_steps.append(tool_name)
+                    
+                    # Add to audit trail
+                    audit_trail.append(
+                        f"Investigator Agent ACTION: Calling {tool_name} with input {json.dumps(tool_input, default=str)}"
+                    )
+                    audit_trail.append(
+                        f"Investigator Agent OBSERVATION: {tool_name} returned {json.dumps(observation, default=str)}"
+                    )
+                except Exception as e:
+                    step = future_to_step[future]
+                    tool_name = step["tool"]
+                    logger.error(f"[INVESTIGATOR AGENT] Tool execution failed: {tool_name} - {str(e)}")
+                    audit_trail.append(f"Investigator Agent ERROR: {tool_name} failed - {str(e)}")
 
         investigation_confidence, evidence_quality_score, summary = _assess_evidence(
             category=category,

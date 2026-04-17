@@ -1,7 +1,12 @@
 from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime
-from database import Base
+
+# Support both relative and absolute imports
+try:
+    from .database import Base
+except ImportError:
+    from database import Base
 
 
 class LoanAccount(Base):

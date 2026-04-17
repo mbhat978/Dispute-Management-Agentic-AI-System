@@ -15,14 +15,9 @@ from langchain_core.prompts import ChatPromptTemplate
 import sys
 import os
 
-# Add backend directory to path to import mcp_client
-backend_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if backend_path not in sys.path:
-    sys.path.insert(0, backend_path)
-
-import mcp_client as banking_tools
-import models
-from database import SessionLocal
+from .. import mcp_client as banking_tools
+from .. import models
+from ..database import SessionLocal
 from .state import DisputeState
 from .config import (
     OPENAI_API_KEY,
@@ -220,6 +215,59 @@ RULE VALIDATION:
         db.close()
 
 
+def _build_compliance_query(state: DisputeState) -> str:
+    category = state["dispute_category"]
+    gathered_data = state["gathered_data"]
+    query = state["customer_query"]
+    trans_details = gathered_data.get("transaction_details", {})
+
+    compliance_context = [
+        f"Category: {category}",
+        f"Customer query: {query}",
+    ]
+
+    if trans_details:
+        compliance_context.extend(
+            [
+                f"Transaction status: {trans_details.get('status', 'unknown')}",
+                f"Amount: {trans_details.get('amount', 'unknown')}",
+                f"Account tier: {trans_details.get('account_tier', 'unknown')}",
+                f"International: {trans_details.get('is_international', False)}",
+            ]
+        )
+
+    if category == "duplicate":
+        duplicate_check = gathered_data.get("duplicate_check", {})
+        compliance_context.append(
+            f"Duplicate check: {json.dumps(duplicate_check, default=str)}"
+        )
+    elif category == "atm_failure":
+        atm_logs = gathered_data.get("atm_logs", {})
+        compliance_context.append(f"ATM logs: {json.dumps(atm_logs, default=str)}")
+    elif category == "loan_dispute":
+        loan_details = gathered_data.get("loan_details", {})
+        compliance_context.append(f"Loan details: {json.dumps(loan_details, default=str)}")
+
+    return " | ".join(compliance_context)
+
+
+def _fetch_compliance_policy_text(state: DisputeState) -> str:
+    compliance_query = _build_compliance_query(state)
+    compliance_result = banking_tools.query_compliance_policy(compliance_query)
+
+    if compliance_result.get("matched"):
+        policy_text = compliance_result.get("policy_text", "").strip()
+        if policy_text:
+            logger.info("[DECISION AGENT] compliance_policy_lookup | matched=true")
+            return policy_text
+
+    logger.warning("[DECISION AGENT] compliance_policy_lookup | matched=false_using_fallback")
+    return (
+        "No directly matching compliance policy found. Escalate to human review when "
+        "policy guidance is unclear."
+    )
+
+
 def _generate_decision_reasoning(state: DisputeState) -> Dict[str, Any]:
     """
     Generate LLM-powered decision reasoning with comprehensive analysis.
@@ -240,7 +288,8 @@ def _generate_decision_reasoning(state: DisputeState) -> Dict[str, Any]:
     triage_confidence = state.get("triage_confidence", 0.0)
     investigation_confidence = state.get("investigation_confidence", 0.0)
 
-    fallback = _rule_based_reasoning(state)
+    compliance_policy_text = _fetch_compliance_policy_text(state)
+    fallback = _rule_based_reasoning(state, compliance_policy_text)
     if not OPENAI_API_KEY:
         logger.info("No OpenAI API key, using rule-based decision")
         return fallback
@@ -256,44 +305,20 @@ def _generate_decision_reasoning(state: DisputeState) -> Dict[str, Any]:
             http_client=http_client
         )
         
-        # Enhanced prompt with comprehensive business rules and reasoning requirements
         prompt = ChatPromptTemplate.from_messages([
             ("system", """You are a senior banking dispute resolution specialist with 15+ years of experience in fraud detection, compliance, and customer service.
 
 Your task is to analyze all evidence and make a well-reasoned decision that balances customer satisfaction, risk management, and regulatory compliance.
 
-BUSINESS RULES (MANDATORY - MUST FOLLOW):
-1. ATM Hardware Fault Confirmed → AUTO-APPROVE refund
-   - If ATM logs show hardware fault or cash not dispensed
-   
-2. Duplicate Charge (< 5 minutes apart) → AUTO-APPROVE refund
-   - If duplicate transactions found within 5 minutes
-   
-3. Loan Disputes → HUMAN REVIEW REQUIRED (Compliance)
-   - All loan/EMI disputes must be reviewed by human due to regulatory requirements
-   
-4. High-Value Disputes (>$10,000) → HUMAN REVIEW REQUIRED
-   - Requires senior approval for risk management
-   
-5. International Fraud with Evidence → AUTO-APPROVE + Block Card
-   - If international transaction + no prior international history
-   
-6. Failed Transaction with Deduction → AUTO-APPROVE refund
-   - If transaction status = failed but amount was debited
-   
-7. Insufficient Evidence → HUMAN REVIEW REQUIRED
-   - If evidence is unclear, ambiguous, or contradictory
-   
-8. VIP Customers (Gold/Platinum) → Higher scrutiny
-   - Require higher confidence threshold for auto-decisions
+You must use the exact compliance policy text provided in the context below as authoritative policy guidance. Do not invent additional bank policy text beyond what is supplied. If the supplied policy text is unclear or insufficient, reflect that uncertainty and prefer human review where appropriate.
 
 DECISION FRAMEWORK:
 1. ANALYZE: Review all gathered evidence systematically
-2. CROSS-REFERENCE: Check evidence against business rules
+2. CROSS-REFERENCE: Check evidence against the supplied compliance policy text
 3. ASSESS RISK: Identify potential fraud indicators or red flags
 4. WEIGH FACTORS: Balance customer impact vs bank risk
 5. DECIDE: Choose the most appropriate decision
-6. JUSTIFY: Provide clear reasoning with evidence references
+6. JUSTIFY: Provide clear reasoning with evidence references and the supplied policy text
 7. RECOMMEND: Suggest specific actions to execute
 
 CONFIDENCE CALIBRATION:
@@ -308,7 +333,7 @@ Return ONLY valid JSON in this exact format:
   "analysis": "Comprehensive analysis of all evidence, patterns observed, and key findings",
   "decision": "auto_approved|auto_rejected|human_review_required",
   "confidence": 0.0-1.0,
-  "justification": "Clear explanation of why this decision was made, referencing specific evidence and business rules",
+  "justification": "Clear explanation of why this decision was made, referencing specific evidence and the supplied policy text",
   "evidence_used": ["evidence_key1", "evidence_key2", "evidence_key3"],
   "evidence_summary": {{
     "transaction_details": "summary of transaction evidence",
@@ -319,7 +344,7 @@ Return ONLY valid JSON in this exact format:
   "risk_assessment": "Overall risk level: low|medium|high",
   "recommended_actions": ["action1", "action2"],
   "alternative_decisions_considered": ["decision1: reason", "decision2: reason"],
-  "compliance_notes": "Any compliance or regulatory considerations"
+  "compliance_notes": "Any compliance or regulatory considerations from the supplied policy text"
 }}"""),
             ("user", """Analyze this banking dispute and make a decision:
 
@@ -331,6 +356,9 @@ DISPUTE INFORMATION:
 
 INVESTIGATION SUMMARY:
 {summary}
+
+COMPLIANCE POLICY TEXT:
+{compliance_policy_text}
 
 GATHERED EVIDENCE:
 {evidence}
@@ -345,6 +373,7 @@ Provide your comprehensive analysis and decision:""")
             triage_confidence=triage_confidence,
             investigation_confidence=investigation_confidence,
             summary=summary if summary else "No summary provided",
+            compliance_policy_text=compliance_policy_text,
             evidence=json.dumps(gathered_data, indent=2, default=str),
         ))
 
@@ -389,7 +418,7 @@ Provide your comprehensive analysis and decision:""")
         return fallback
 
 
-def _rule_based_reasoning(state: DisputeState) -> Dict[str, Any]:
+def _rule_based_reasoning(state: DisputeState, compliance_policy_text: str = "") -> Dict[str, Any]:
     category = state["dispute_category"]
     gathered_data = state["gathered_data"]
     trans_details = gathered_data.get("transaction_details", {})
@@ -400,7 +429,10 @@ def _rule_based_reasoning(state: DisputeState) -> Dict[str, Any]:
             "analysis": "ATM logs show a hardware fault linked to the transaction.",
             "decision": "auto_approved",
             "confidence": 0.95,
-            "justification": f"ATM hardware fault confirmed. Approving refund of ${amount}.",
+            "justification": (
+                f"ATM hardware fault confirmed. Approving refund of ${amount}. "
+                f"Relevant policy: {compliance_policy_text}"
+            ),
             "evidence_used": ["transaction_details", "atm_logs"],
             "risk_factors": [],
             "recommended_actions": ["initiate_refund"],
@@ -411,7 +443,10 @@ def _rule_based_reasoning(state: DisputeState) -> Dict[str, Any]:
             "analysis": "Loan disputes are governed by compliance rules and must be reviewed by humans.",
             "decision": "human_review_required",
             "confidence": 0.98,
-            "justification": "Loan dispute requires human review due to compliance constraints.",
+            "justification": (
+                "Loan dispute requires human review due to compliance constraints. "
+                f"Relevant policy: {compliance_policy_text}"
+            ),
             "evidence_used": list(gathered_data.keys()),
             "risk_factors": ["compliance_sensitive"],
             "recommended_actions": ["route_to_human"],
@@ -422,7 +457,10 @@ def _rule_based_reasoning(state: DisputeState) -> Dict[str, Any]:
             "analysis": "Transaction status is failed while the customer reports deduction.",
             "decision": "auto_approved",
             "confidence": 0.9,
-            "justification": f"Failed transaction supported by status evidence. Approving refund of ${amount}.",
+            "justification": (
+                f"Failed transaction supported by status evidence. Approving refund of ${amount}. "
+                f"Relevant policy: {compliance_policy_text}"
+            ),
             "evidence_used": ["transaction_details"],
             "risk_factors": [],
             "recommended_actions": ["initiate_refund"],
@@ -432,7 +470,10 @@ def _rule_based_reasoning(state: DisputeState) -> Dict[str, Any]:
         "analysis": "Available evidence is mixed or incomplete.",
         "decision": "human_review_required",
         "confidence": 0.65,
-        "justification": "Routing to human review because evidence is incomplete or requires judgment.",
+        "justification": (
+            "Routing to human review because evidence is incomplete or requires judgment. "
+            f"Relevant policy: {compliance_policy_text}"
+        ),
         "evidence_used": list(gathered_data.keys()),
         "risk_factors": ["insufficient_evidence"],
         "recommended_actions": ["route_to_human"],

@@ -2,8 +2,8 @@
 MCP Client for Core Banking Server
 
 This module provides a client interface to communicate with the core_banking_server.py
-MCP server. It handles the async communication and provides synchronous wrapper functions
-that can be easily used by our agents.
+MCP server using Server-Sent Events (SSE). It maintains a persistent connection to the
+server and reuses the same session for all tool calls.
 """
 
 import asyncio
@@ -11,70 +11,76 @@ import json
 from typing import Dict, Any
 from datetime import datetime
 from pathlib import Path
-from mcp.client.stdio import stdio_client, StdioServerParameters
+from mcp.client.sse import sse_client
 from mcp.client.session import ClientSession
 
 
-async def _call_mcp_tool_async(tool_name: str, arguments: dict) -> Dict[str, Any]:
+# SSE server configuration
+SSE_SERVER_URL = "http://localhost:8001/sse"
+COMPLIANCE_SSE_SERVER_URL = "http://localhost:8002/sse"
+
+
+async def _call_mcp_tool_async(
+    tool_name: str,
+    arguments: dict,
+    server_url: str = SSE_SERVER_URL,
+) -> Dict[str, Any]:
     """
-    Internal async function to call MCP tools via the core banking server.
-    
+    Internal async function to call MCP tools via an MCP SSE server.
+    Uses SSE connection to communicate with the persistent server.
+
     Args:
         tool_name (str): Name of the tool to call
         arguments (dict): Arguments to pass to the tool
-        
+        server_url (str): SSE endpoint for the target MCP server
+
     Returns:
         Dict[str, Any]: Parsed result from the MCP server
     """
-    # Set up server parameters to execute the core banking server
-    backend_dir = Path(__file__).resolve().parent
-    server_script = backend_dir / "mcp_servers" / "core_banking_server.py"
+    try:
+        async with sse_client(server_url) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool(tool_name, arguments)
 
-    server_params = StdioServerParameters(
-        command="python",
-        args=[str(server_script)],
-        env=None,
-        cwd=str(backend_dir)
-    )
-    
-    # Initialize connection and call the tool
-    async with stdio_client(server_params) as (read, write):
-        async with ClientSession(read, write) as session:
-            # Initialize the session
-            await session.initialize()
-            
-            # Call the tool
-            result = await session.call_tool(tool_name, arguments)
-            
-            # Parse the result
-            if result.content:
-                # MCP returns content as a list of content items
-                for content_item in result.content:
-                    # Check if this is a TextContent item
-                    if hasattr(content_item, 'type') and content_item.type == 'text':
-                        if hasattr(content_item, 'text'):
-                            # Parse JSON response
-                            return json.loads(content_item.text)
-            
-            # Return empty dict if no content
-            return {}
+                if result.content:
+                    for content_item in result.content:
+                        if hasattr(content_item, 'type') and content_item.type == 'text':
+                            if hasattr(content_item, 'text'):
+                                return json.loads(content_item.text)
+
+                return {}
+
+    except Exception as e:
+        print(f"Error calling MCP tool {tool_name} on {server_url}: {str(e)}")
+        return {
+            "error": str(e),
+            "tool_name": tool_name,
+            "server_url": server_url,
+            "status": "failed"
+        }
 
 
-def call_mcp_tool(tool_name: str, arguments: dict) -> Dict[str, Any]:
+def call_mcp_tool(
+    tool_name: str,
+    arguments: dict,
+    server_url: str = SSE_SERVER_URL,
+) -> Dict[str, Any]:
     """
     Synchronous wrapper to call MCP tools.
-    
+
     This function allows synchronous code (like our agents) to easily call
-    the async MCP tools without dealing with async/await syntax.
-    
+    async MCP tools without dealing with async/await syntax.
+
     Args:
         tool_name (str): Name of the tool to call
         arguments (dict): Arguments to pass to the tool
-        
+        server_url (str): SSE endpoint for the target MCP server
+
     Returns:
         Dict[str, Any]: Result from the MCP server
     """
-    return asyncio.run(_call_mcp_tool_async(tool_name, arguments))
+    return asyncio.run(_call_mcp_tool_async(tool_name, arguments, server_url))
 
 
 # ============================================================================
@@ -247,6 +253,23 @@ def check_merchant_refund_status(transaction_id: int) -> Dict[str, Any]:
     return call_mcp_tool('check_merchant_refund_status_tool', {'transaction_id': transaction_id})
 
 
+def query_compliance_policy(query: str) -> Dict[str, Any]:
+    """
+    Query the compliance MCP server for the most relevant dispute policy text.
+
+    Args:
+        query (str): Natural language query describing the dispute context.
+
+    Returns:
+        Dict[str, Any]: Policy lookup result including matched policy text.
+    """
+    return call_mcp_tool(
+        'query_compliance_policy',
+        {'query': query},
+        server_url=COMPLIANCE_SSE_SERVER_URL,
+    )
+
+
 # Helper function for agent introspection
 def get_available_tools() -> list:
     """
@@ -291,6 +314,10 @@ def get_available_tools() -> list:
         {
             "name": "check_merchant_refund_status",
             "description": "Check refund status with merchant/payment gateway to verify if refund has been initiated"
+        },
+        {
+            "name": "query_compliance_policy",
+            "description": "Query the compliance MCP server for the most relevant bank dispute policy paragraph"
         }
     ]
     return tools

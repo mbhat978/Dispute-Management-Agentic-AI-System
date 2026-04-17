@@ -73,28 +73,34 @@ function getErrorMessage(errorData: ApiErrorResponse | null | undefined, fallbac
 function getStatusBadge(status: string) {
   switch (status) {
     case "auto_approved":
-      return { 
-        variant: "default" as const, 
-        className: "bg-green-500 hover:bg-green-600", 
-        icon: <CheckCircle2 className="h-4 w-4 mr-1" /> 
+      return {
+        variant: "default" as const,
+        className: "bg-green-500 hover:bg-green-600",
+        icon: <CheckCircle2 className="h-4 w-4 mr-1" />
       };
     case "auto_rejected":
-      return { 
-        variant: "destructive" as const, 
-        className: "", 
-        icon: <XCircle className="h-4 w-4 mr-1" /> 
+      return {
+        variant: "destructive" as const,
+        className: "",
+        icon: <XCircle className="h-4 w-4 mr-1" />
       };
     case "human_review_required":
-      return { 
-        variant: "secondary" as const, 
-        className: "bg-yellow-500 hover:bg-yellow-600 text-black", 
-        icon: <AlertCircle className="h-4 w-4 mr-1" /> 
+      return {
+        variant: "secondary" as const,
+        className: "bg-yellow-500 hover:bg-yellow-600 text-black",
+        icon: <AlertCircle className="h-4 w-4 mr-1" />
+      };
+    case "pending_review":
+      return {
+        variant: "secondary" as const,
+        className: "bg-orange-500 hover:bg-orange-600 text-white",
+        icon: <AlertCircle className="h-4 w-4 mr-1" />
       };
     default:
-      return { 
-        variant: "outline" as const, 
-        className: "", 
-        icon: <Clock className="h-4 w-4 mr-1" /> 
+      return {
+        variant: "outline" as const,
+        className: "",
+        icon: <Clock className="h-4 w-4 mr-1" />
       };
   }
 }
@@ -166,6 +172,7 @@ export default function TicketDetailPage() {
   const [humanNotes, setHumanNotes] = useState("");
   const [showNotesDialog, setShowNotesDialog] = useState(false);
   const [pendingAction, setPendingAction] = useState<"approve" | "reject" | null>(null);
+  const [overrideProcessing, setOverrideProcessing] = useState(false);
 
   useEffect(() => {
     async function fetchTicketDetails() {
@@ -250,6 +257,42 @@ export default function TicketDetailPage() {
       setActionError(err instanceof Error ? err.message : `Failed to ${action} ticket`);
     } finally {
       setProcessing(false);
+    }
+  };
+
+  const handleHumanOverride = async (decision: string) => {
+    setOverrideProcessing(true);
+    setActionError(null);
+    setActionSuccess(null);
+    
+    try {
+      const response = await fetch(`http://localhost:8000/api/disputes/${ticketId}/resume`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          override_decision: decision
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData: ApiErrorResponse = await response.json().catch(() => ({}));
+        throw new Error(getErrorMessage(errorData, `Failed to ${decision} dispute: ${response.statusText}`));
+      }
+      
+      const result = await response.json();
+      setActionSuccess(result.message ?? `Dispute ${decision}d successfully. Processing will resume.`);
+      
+      // Refresh the page after a short delay to show the updated status
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    } catch (err) {
+      console.error(`Error ${decision}ing dispute:`, err);
+      setActionError(err instanceof Error ? err.message : `Failed to ${decision} dispute`);
+    } finally {
+      setOverrideProcessing(false);
     }
   };
 
@@ -522,6 +565,77 @@ export default function TicketDetailPage() {
                     </div>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Human Intervention for Paused Tickets */}
+          {dispute.status === "pending_review" && (
+            <Card className="border-orange-500 border-2 bg-orange-50 dark:bg-orange-950/20">
+              <CardHeader>
+                <CardTitle className="text-orange-700 dark:text-orange-300 flex items-center">
+                  <AlertCircle className="h-5 w-5 mr-2" />
+                  Human Intervention Required
+                </CardTitle>
+                <CardDescription className="text-orange-600 dark:text-orange-400">
+                  This dispute has been paused by the AI system and requires your decision to proceed.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {actionError && (
+                  <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
+                    <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+                    <p className="text-sm">{actionError}</p>
+                  </div>
+                )}
+                {actionSuccess && (
+                  <div className="flex items-start gap-3 rounded-lg border border-green-200 bg-green-50 p-4 text-green-700">
+                    <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
+                    <p className="text-sm">{actionSuccess}</p>
+                  </div>
+                )}
+                <div className="bg-white dark:bg-gray-900 p-4 rounded-md border">
+                  <p className="text-sm text-gray-700 dark:text-gray-300 mb-4">
+                    The AI system has paused processing and is awaiting your decision. Choose to approve or reject this dispute to allow the system to continue processing with your override decision.
+                  </p>
+                  <div className="flex gap-3">
+                    <Button
+                      onClick={() => handleHumanOverride("approve")}
+                      disabled={overrideProcessing}
+                      className="flex-1 bg-green-600 hover:bg-green-700"
+                    >
+                      {overrideProcessing ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                          Processing...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="h-4 w-4 mr-2" />
+                          Approve Dispute
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      onClick={() => handleHumanOverride("reject")}
+                      disabled={overrideProcessing}
+                      variant="destructive"
+                      className="flex-1"
+                    >
+                      {overrideProcessing ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                          Processing...
+                        </>
+                      ) : (
+                        <>
+                          <XCircle className="h-4 w-4 mr-2" />
+                          Reject Dispute
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           )}

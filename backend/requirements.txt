@@ -8,6 +8,7 @@ sse-starlette
 
 # LangChain and LangGraph for agent orchestration - pinned for compatibility
 langgraph>=0.2.45
+langgraph-checkpoint-sqlite
 langchain>=0.3.7
 langchain-openai>=0.2.11
 langchain-core>=0.3.21

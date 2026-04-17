@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Initialize logging configuration
-from config import setup_logging
+from .config import setup_logging
 setup_logging()
 
 from fastapi import FastAPI, Depends, HTTPException, Request
@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import datetime
-from typing import cast, Any, Optional
+from typing import cast, Any, Optional, Dict
 from sse_starlette.sse import EventSourceResponse
 import asyncio
 import json
@@ -23,10 +23,10 @@ import traceback
 from contextlib import suppress
 from loguru import logger
 
-from database import engine, get_db, Base
-import models
-from agents.state import DisputeState, initialize_dispute_state
-from agents.orchestrator import dispute_resolution_workflow
+from .database import engine, get_db, Base
+from . import models
+from .agents.state import DisputeState, initialize_dispute_state
+from .agents.orchestrator import get_workflow
 
 # Create all tables in the database
 Base.metadata.create_all(bind=engine)
@@ -904,7 +904,7 @@ class DisputeProcessRequest(BaseModel):
 
 
 @app.post("/api/disputes/process")
-def process_dispute(request: DisputeProcessRequest, db: Session = Depends(get_db)):
+async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(get_db)):
     """
     Process a dispute ticket using the multi-agent AI system with streaming.
     
@@ -983,7 +983,12 @@ def process_dispute(request: DisputeProcessRequest, db: Session = Depends(get_db
         # Define async function to run the workflow stream
         async def run_workflow_stream():
             nonlocal final_state
-            async for chunk in dispute_resolution_workflow.astream(initial_state):
+            # Get the workflow instance
+            workflow = await get_workflow()
+            # Configure thread_id for checkpointing (HITL support)
+            config: Dict[str, Any] = {'configurable': {'thread_id': str(new_ticket.id)}}
+            
+            async for chunk in workflow.astream(initial_state, config):  # type: ignore[arg-type]
                 # Each chunk is a dict with node name as key and state as value
                 for node_name, node_state in chunk.items():
                     # Create agent-friendly name mapping
@@ -1049,9 +1054,21 @@ def process_dispute(request: DisputeProcessRequest, db: Session = Depends(get_db
 
                     # Keep track of the latest state
                     final_state = cast(DisputeState, node_state)
+            
+            # Check if workflow was interrupted (paused at checkpoint)
+            if final_state and not final_state.get("final_decision"):
+                logger.info("[HITL] Workflow paused at interrupt point - awaiting human review")
+                broadcast_stream_event(
+                    "workflow_paused",
+                    {
+                        "ticket_id": new_ticket.id,
+                        "message": "Workflow paused for human review before decision",
+                        "state": final_state
+                    }
+                )
         
-        # Run the async workflow in a new event loop (worker thread)
-        asyncio.run(run_workflow_stream())
+        # Run the async workflow (already in async context)
+        await run_workflow_stream()
         
         if final_state is None:
             raise ValueError("Workflow stream completed without producing a final state")
@@ -1120,6 +1137,188 @@ def process_dispute(request: DisputeProcessRequest, db: Session = Depends(get_db
             },
             ticket_id=getattr(new_ticket, "id", None),
         )
+
+# ============================================================================
+# HUMAN-IN-THE-LOOP (HITL) RESUME ENDPOINT
+# ============================================================================
+
+class DisputeResumeRequest(BaseModel):
+    """Request model for resuming a paused dispute workflow with human decision."""
+    override_decision: str
+    human_notes: Optional[str] = None
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "override_decision": "approved",
+                "human_notes": "Approved after manual review of transaction history"
+            }
+        }
+
+
+@app.post("/api/disputes/{ticket_id}/resume")
+async def resume_dispute(
+    ticket_id: int,
+    request: DisputeResumeRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Resume a paused dispute workflow with human decision override.
+    
+    This endpoint allows a human reviewer to inject a decision into a paused
+    workflow and resume execution from the decision node.
+    
+    Args:
+        ticket_id: The dispute ticket ID (used as thread_id)
+        request: DisputeResumeRequest containing override_decision and optional notes
+        db: Database session
+        
+    Returns:
+        Dict containing the final state after resuming the workflow
+        
+    Raises:
+        HTTPException: If ticket not found or resume fails
+    """
+    try:
+        # Verify the ticket exists
+        dispute = db.query(models.DisputeTicket).filter(
+            models.DisputeTicket.id == ticket_id
+        ).first()
+        
+        if not dispute:
+            raise_api_error(
+                404,
+                f"Dispute ticket #{ticket_id} not found.",
+                code="TICKET_NOT_FOUND",
+                ticket_id=ticket_id
+            )
+        
+        # Validate override_decision
+        valid_decisions = ['approved', 'rejected', 'auto_approved', 'auto_rejected']
+        if request.override_decision not in valid_decisions:
+            raise_api_error(
+                400,
+                f"Invalid override_decision. Must be one of: {', '.join(valid_decisions)}",
+                code="INVALID_DECISION",
+                ticket_id=ticket_id
+            )
+        
+        logger.info("=" * 80)
+        logger.info(f"[HITL RESUME] DISPUTE TICKET #{ticket_id}")
+        logger.info("=" * 80)
+        logger.info(f"Override Decision: {request.override_decision}")
+        logger.info(f"Human Notes: {request.human_notes or 'None'}")
+        logger.info("=" * 80)
+        
+        broadcast_stream_event(
+            "resume_started",
+            {
+                "ticket_id": ticket_id,
+                "message": f"Resuming dispute ticket #{ticket_id} with human decision",
+                "override_decision": request.override_decision,
+                "human_notes": request.human_notes
+            }
+        )
+        
+        # Configure thread_id for checkpointing
+        config: Dict[str, Any] = {'configurable': {'thread_id': str(ticket_id)}}
+        
+        # Get the workflow instance
+        workflow = await get_workflow()
+        
+        # Update the graph state with human decision
+        workflow.update_state(
+            config,  # type: ignore[arg-type]
+            {
+                "final_decision": request.override_decision,
+                "decision_reasoning": {
+                    "decision": request.override_decision,
+                    "confidence": 1.0,
+                    "reasoning": f"Human override: {request.human_notes or 'Manual review completed'}",
+                    "human_review": True
+                },
+                "decision_confidence": 1.0,
+                "audit_trail": [f"Human Review: Decision overridden to '{request.override_decision}'. Notes: {request.human_notes or 'None'}"]
+            }
+        )
+        
+        logger.info("[HITL] State updated with human decision, resuming workflow...")
+        
+        # Resume the workflow from the checkpoint
+        final_state = None
+        
+        async def run_resume_workflow():
+            nonlocal final_state
+            async for chunk in workflow.astream(None, config):  # type: ignore[arg-type]
+                for node_name, node_state in chunk.items():
+                    logger.info(f"[RESUME] Processing node: {node_name}")
+                    
+                    broadcast_stream_event(
+                        "agent_update",
+                        {
+                            "ticket_id": ticket_id,
+                            "node": node_name,
+                            "message": f"Resuming workflow at {node_name}",
+                            "state": {
+                                "final_decision": node_state.get("final_decision"),
+                                "decision_confidence": node_state.get("decision_confidence")
+                            }
+                        }
+                    )
+                    
+                    final_state = cast(DisputeState, node_state)
+        
+        # Run the async workflow
+        await run_resume_workflow()
+        
+        if final_state is None:
+            raise ValueError("Resume workflow completed without producing a final state")
+        
+        logger.info("=" * 80)
+        logger.info("[SUCCESS] DISPUTE RESUME COMPLETE")
+        logger.info("=" * 80)
+        logger.info(f"Final Decision: {final_state.get('final_decision', 'UNKNOWN').upper()}")
+        logger.info("=" * 80)
+        
+        broadcast_stream_event(
+            "resume_completed",
+            {
+                "ticket_id": ticket_id,
+                "message": f"Completed resume for dispute ticket #{ticket_id}",
+                "final_decision": final_state.get("final_decision", "unknown"),
+                "audit_trail": final_state.get("audit_trail", [])
+            }
+        )
+        
+        return {
+            "status": "success",
+            "ticket_id": ticket_id,
+            "final_decision": final_state.get("final_decision", "unknown"),
+            "decision_reasoning": final_state.get("decision_reasoning", {}),
+            "audit_trail": final_state.get("audit_trail", []),
+            "message": f"Dispute workflow resumed successfully with decision: {final_state.get('final_decision', 'unknown')}"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error resuming dispute #{ticket_id}: {str(e)}")
+        broadcast_stream_event(
+            "resume_failed",
+            {
+                "ticket_id": ticket_id,
+                "message": "Dispute resume failed",
+                "error": str(e)
+            }
+        )
+        raise_api_error(
+            500,
+            "Unable to resume dispute workflow.",
+            code="DISPUTE_RESUME_FAILED",
+            details={"reason": str(e)},
+            ticket_id=ticket_id
+        )
+
 
 
 # ============================================================================

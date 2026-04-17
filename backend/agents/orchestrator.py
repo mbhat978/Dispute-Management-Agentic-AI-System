@@ -6,8 +6,10 @@ the triage, investigator, and decision agents.
 """
 
 from typing import Any, Dict, Literal
+import asyncio
 from loguru import logger
 from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver  # type: ignore[import-untyped]
 from .state import DisputeState
 from .triage_react import triage_node_react
 from .investigator import investigator_node
@@ -17,6 +19,24 @@ from .config import (
     ESCALATION_CONFIDENCE_THRESHOLD,
     MAX_WORKFLOW_ITERATIONS,
 )
+
+# Global variable to hold the initialized checkpointer
+_checkpointer_instance = None
+_checkpointer_lock = asyncio.Lock()
+
+
+async def get_checkpointer():
+    """Get or create the AsyncSqliteSaver instance."""
+    global _checkpointer_instance
+    
+    if _checkpointer_instance is None:
+        async with _checkpointer_lock:
+            if _checkpointer_instance is None:
+                # Initialize the async context manager and enter it
+                ctx_manager = AsyncSqliteSaver.from_conn_string('checkpoints.db')
+                _checkpointer_instance = await ctx_manager.__aenter__()
+    
+    return _checkpointer_instance
 
 
 def clarification_node(state: DisputeState) -> Dict[str, Any]:
@@ -158,7 +178,7 @@ def route_after_decision(state: DisputeState) -> Literal["investigator", "END"]:
     return "END"
 
 
-def build_dispute_resolution_graph():
+async def build_dispute_resolution_graph():
     """
     Build and compile the LangGraph workflow for dispute resolution.
     
@@ -166,9 +186,10 @@ def build_dispute_resolution_graph():
     triage → clarification/investigator → re_investigate/decision → END or loop
     
     Returns:
-        Compiled StateGraph ready for execution
+        Compiled StateGraph ready for execution with async checkpointer
     """
     logger.info("[ORCHESTRATOR] Building dispute resolution graph")
+    
     # Initialize the graph with DisputeState
     workflow = StateGraph(DisputeState)
 
@@ -218,14 +239,32 @@ def build_dispute_resolution_graph():
         }
     )
 
-    # Compile the graph
-    app = workflow.compile()
+    # Get the async checkpointer instance
+    checkpointer = await get_checkpointer()
+    
+    # Compile the graph with async checkpointer and interrupt before decision node for HITL
+    app = workflow.compile(checkpointer=checkpointer, interrupt_before=['decision'])
 
-    logger.success("[ORCHESTRATOR] Dispute resolution graph compiled successfully")
+    logger.success("[ORCHESTRATOR] Dispute resolution graph compiled successfully with HITL checkpointing")
     return app
 
 
-# Create a singleton instance of the compiled graph
-dispute_resolution_workflow = build_dispute_resolution_graph()
+# Initialize the workflow asynchronously
+async def _init_workflow():
+    """Initialize the workflow with async checkpointer."""
+    return await build_dispute_resolution_graph()
+
+
+# Create a placeholder that will be initialized on first use
+dispute_resolution_workflow = None
+
+
+async def get_workflow():
+    """Get or initialize the dispute resolution workflow."""
+    global dispute_resolution_workflow
+    if dispute_resolution_workflow is None:
+        # Initialize asynchronously
+        dispute_resolution_workflow = await _init_workflow()
+    return dispute_resolution_workflow
 
 # Made with Bob

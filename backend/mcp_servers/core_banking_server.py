@@ -18,7 +18,7 @@ from banking_tools import (
 )
 
 
-mcp = FastMCP("CoreBanking")
+mcp = FastMCP("CoreBanking", port=8001)
 
 
 @mcp.tool()
@@ -171,6 +171,7 @@ def check_merchant_refund_status_tool(transaction_id: int) -> dict:
 
 
 if __name__ == "__main__":
-    mcp.run()
+    # Run as SSE server on port 8001
+    mcp.run(transport='sse')
 
 # Made with Bob
