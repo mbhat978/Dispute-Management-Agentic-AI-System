@@ -46,7 +46,7 @@ if not exist "node_modules" (
 cd ..
 
 echo [3/4] Starting Backend (FastAPI on port 8000)...
-start "Backend" cmd /k "cd backend && venv\Scripts\activate.bat && uvicorn main:app --reload --port 8000 --reload-exclude mcp_servers/*"
+start "Backend" cmd /k "cd backend && venv\Scripts\activate.bat && uvicorn main:app --host 0.0.0.0 --port 8000"
 
 echo Waiting for backend to start...
 timeout /t 3 /nobreak >nul

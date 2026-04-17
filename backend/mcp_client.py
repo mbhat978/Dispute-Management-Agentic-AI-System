@@ -135,7 +135,7 @@ def check_duplicate_transactions(
     customer_id: int,
     merchant_name: str,
     amount: float,
-    date: datetime,
+    date: str,
     time_window_hours: int = 24
 ) -> Dict[str, Any]:
     """
@@ -145,7 +145,7 @@ def check_duplicate_transactions(
         customer_id (int): The unique identifier of the customer.
         merchant_name (str): The name of the merchant to search for.
         amount (float): The transaction amount to match.
-        date (datetime): The reference date/time for the search window.
+        date (str): The reference date/time for the search window (ISO format string).
         time_window_hours (int, optional): Hours before and after the reference
                                           date to search. Defaults to 24 hours.
         
@@ -156,7 +156,7 @@ def check_duplicate_transactions(
         'customer_id': customer_id,
         'merchant_name': merchant_name,
         'amount': amount,
-        'date': date.isoformat(),
+        'date': date,
         'time_window_hours': time_window_hours
     })
 

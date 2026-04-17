@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { AlertCircle, Brain, Building2, CheckCircle2, Landmark, Radio, Send, WifiOff } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -92,6 +92,7 @@ interface LiveFeedEvent {
   final_decision?: string | null;
   dispute_category?: string | null;
   state?: LiveFeedState;
+  isAgentUpdate?: boolean;
 }
 
 function formatStatus(status: string): string {
@@ -99,6 +100,21 @@ function formatStatus(status: string): string {
     .split("_")
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
+}
+
+function formatDisputeCategory(category: string): string {
+  const categoryMap: Record<string, string> = {
+    "fraud": "Fraudulent Transaction",
+    "duplicate": "Duplicate Charge",
+    "atm_failure": "ATM Failure",
+    "merchant_dispute": "Merchant Dispute",
+    "failed_transaction": "Failed Transaction",
+    "loan_dispute": "Loan Dispute",
+    "refund_not_received": "Refund Not Received",
+    "unknown": "Under Review"
+  };
+  
+  return categoryMap[category] || formatStatus(category);
 }
 
 function formatEventLabel(eventType: string): string {
@@ -127,9 +143,39 @@ function getEventBadgeClass(eventType: string): string {
   }
 }
 
+function getNodeBadgeClass(node: string): { className: string; label: string } {
+  switch (node.toLowerCase()) {
+    case "triage":
+      return { className: "bg-blue-500 hover:bg-blue-600 text-white", label: "🔍 Triage" };
+    case "investigator":
+      return { className: "bg-purple-500 hover:bg-purple-600 text-white", label: "🔬 Investigator" };
+    case "decision":
+      return { className: "bg-green-500 hover:bg-green-600 text-white", label: "⚖️ Decision" };
+    case "re_investigate":
+      return { className: "bg-orange-500 hover:bg-orange-600 text-white", label: "🔄 Re-Investigate" };
+    default:
+      return { className: "bg-slate-500 hover:bg-slate-600 text-white", label: `📋 ${node}` };
+  }
+}
+
 function LiveAiFeed({ activeTicketId }: { activeTicketId: number | null }) {
   const [events, setEvents] = useState<LiveFeedEvent[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<"idle" | "connecting" | "connected" | "disconnected">("idle");
+  const feedContainerRef = useRef<HTMLDivElement>(null);
+  const feedEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom when new events arrive
+  useEffect(() => {
+    if (feedContainerRef.current) {
+      feedContainerRef.current.scrollTo({
+        top: feedContainerRef.current.scrollHeight,
+        behavior: "smooth",
+      });
+      return;
+    }
+
+    feedEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [events]);
 
   useEffect(() => {
     setConnectionStatus("connecting");
@@ -144,12 +190,12 @@ function LiveAiFeed({ activeTicketId }: { activeTicketId: number | null }) {
 
         const appendEvent = (eventType: string, rawData: string) => {
           try {
-            // Filter out heartbeat events from UI feed
             if (eventType === "heartbeat") {
               return;
             }
 
             const parsed = JSON.parse(rawData) as {
+              type?: string;
               timestamp?: string;
               message?: string;
               ticket_id?: number | null;
@@ -159,35 +205,57 @@ function LiveAiFeed({ activeTicketId }: { activeTicketId: number | null }) {
               final_decision?: string | null;
               dispute_category?: string | null;
               state?: LiveFeedState;
+              data?: {
+                type?: string;
+                timestamp?: string;
+                message?: string;
+                ticket_id?: number | null;
+                node?: string | null;
+                agent_name?: string | null;
+                activity_summary?: string | null;
+                final_decision?: string | null;
+                dispute_category?: string | null;
+                state?: LiveFeedState;
+              };
             };
+
+            const payload = parsed.data ?? parsed;
+            const normalizedEventType = payload.type ?? parsed.type ?? eventType;
+            const isAgentUpdate = normalizedEventType === "agent_update";
+            const resolvedNode = payload.node ?? null;
+            const resolvedMessage =
+              payload.message ??
+              payload.activity_summary ??
+              (isAgentUpdate && resolvedNode ? `${formatStatus(resolvedNode)} agent is reviewing your dispute.` : "AI workflow update received");
 
             console.log(`[LiveAiFeed] Received ${eventType}:`, parsed);
 
-            if (activeTicketId != null && parsed.ticket_id != null && parsed.ticket_id !== activeTicketId) {
-              console.log(`[LiveAiFeed] Filtering out event for ticket ${parsed.ticket_id} (active: ${activeTicketId})`);
+            if (activeTicketId != null && payload.ticket_id != null && payload.ticket_id !== activeTicketId) {
+              console.log(`[LiveAiFeed] Filtering out event for ticket ${payload.ticket_id} (active: ${activeTicketId})`);
               return;
             }
 
             setEvents((current) => {
               const nextEvent: LiveFeedEvent = {
-                id: `${eventType}-${parsed.timestamp ?? Date.now()}-${current.length}`,
-                timestamp: parsed.timestamp ?? new Date().toISOString(),
-                eventType,
-                message: parsed.message ?? "AI workflow update received",
-                ticket_id: parsed.ticket_id,
-                node: parsed.node,
-                final_decision: parsed.final_decision ?? parsed.state?.final_decision ?? null,
-                dispute_category: parsed.dispute_category ?? parsed.state?.dispute_category ?? null,
-                state: parsed.state,
+                id: `${normalizedEventType}-${payload.timestamp ?? parsed.timestamp ?? Date.now()}-${current.length}`,
+                timestamp: payload.timestamp ?? parsed.timestamp ?? new Date().toISOString(),
+                eventType: normalizedEventType,
+                message: resolvedMessage,
+                ticket_id: payload.ticket_id,
+                node: resolvedNode,
+                final_decision: payload.final_decision ?? payload.state?.final_decision ?? null,
+                dispute_category: payload.dispute_category ?? payload.state?.dispute_category ?? null,
+                state: payload.state,
+                isAgentUpdate,
               };
 
-              if (activeTicketId == null && parsed.ticket_id == null && eventType !== "connection") {
-                console.log(`[LiveAiFeed] Filtering out ${eventType} event (no active ticket)`);
+              if (activeTicketId == null && payload.ticket_id == null && normalizedEventType !== "connection") {
+                console.log(`[LiveAiFeed] Filtering out ${normalizedEventType} event (no active ticket)`);
                 return current;
               }
 
               console.log(`[LiveAiFeed] Adding event to feed:`, nextEvent);
-              return [nextEvent, ...current].slice(0, 30);
+              return [...current, nextEvent].slice(-30);
             });
           } catch (streamError) {
             console.error("[LiveAiFeed] Failed to parse event:", streamError, rawData);
@@ -302,74 +370,105 @@ function LiveAiFeed({ activeTicketId }: { activeTicketId: number | null }) {
               : "Waiting for live updates for your submitted dispute."}
           </div>
         ) : (
-          <div className="space-y-3 max-h-[420px] overflow-y-auto pr-2">
-            {events.map((event) => (
-              <div key={event.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <Badge className={getEventBadgeClass(event.eventType)}>
-                      {formatEventLabel(event.eventType)}
-                    </Badge>
-                    {event.node && (
-                      <Badge variant="outline">
-                        Step: {event.node}
-                      </Badge>
-                    )}
-                    {event.ticket_id != null && (
-                      <Badge variant="secondary">
-                        Ticket #{event.ticket_id}
-                      </Badge>
-                    )}
+          <div ref={feedContainerRef} className="space-y-3 max-h-[420px] overflow-y-auto pr-2">
+            {events.map((event) => {
+              const isAgentUpdate = event.isAgentUpdate ?? event.eventType === "agent_update";
+              const nodeBadge = event.node ? getNodeBadgeClass(event.node) : null;
+              
+              return (
+                <div
+                  key={event.id}
+                  className={`rounded-lg border p-4 ${
+                    isAgentUpdate
+                      ? "border-purple-300 bg-gradient-to-r from-purple-50 to-blue-50 shadow-sm"
+                      : "border-slate-200 bg-slate-50"
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      {isAgentUpdate ? (
+                        <>
+                          {nodeBadge && (
+                            <Badge className={nodeBadge.className}>
+                              {nodeBadge.label}
+                            </Badge>
+                          )}
+                          <Badge className="bg-slate-800 hover:bg-slate-900 text-white">
+                            <Brain className="mr-1 h-3.5 w-3.5" />
+                            AI Thinking
+                          </Badge>
+                        </>
+                      ) : (
+                        <Badge className={getEventBadgeClass(event.eventType)}>
+                          {formatEventLabel(event.eventType)}
+                        </Badge>
+                      )}
+                      {!isAgentUpdate && event.node && (
+                        <Badge variant="outline">
+                          Step: {event.node}
+                        </Badge>
+                      )}
+                      {event.ticket_id != null && (
+                        <Badge variant="secondary">
+                          Ticket #{event.ticket_id}
+                        </Badge>
+                      )}
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(event.timestamp).toLocaleTimeString()}
+                    </span>
                   </div>
-                  <span className="text-xs text-muted-foreground">
-                    {new Date(event.timestamp).toLocaleTimeString()}
-                  </span>
+
+                  <p className={`mt-3 text-sm leading-relaxed ${
+                    isAgentUpdate ? "font-medium text-slate-800" : "text-slate-700"
+                  }`}>
+                    {isAgentUpdate && "🤖 "}{event.message}
+                  </p>
+
+                  {(event.dispute_category || event.final_decision || event.state) && (
+                    <div className="mt-3 grid gap-2 md:grid-cols-2">
+                      {(event.dispute_category || event.state?.dispute_category) && (
+                        <div className="rounded-md bg-white p-3 text-xs text-slate-700">
+                          <span className="font-semibold">Category:</span>{" "}
+                          {formatDisputeCategory(event.dispute_category ?? event.state?.dispute_category ?? "")}
+                        </div>
+                      )}
+                      {(event.final_decision || event.state?.final_decision) && (
+                        <div className="rounded-md bg-white p-3 text-xs text-slate-700">
+                          <span className="font-semibold">Decision:</span>{" "}
+                          {formatStatus(event.final_decision ?? event.state?.final_decision ?? "")}
+                        </div>
+                      )}
+                      {typeof event.state?.triage_confidence === "number" && (
+                        <div className="rounded-md bg-white p-3 text-xs text-slate-700">
+                          <span className="font-semibold">Triage Confidence:</span>{" "}
+                          {(event.state.triage_confidence * 100).toFixed(1)}%
+                        </div>
+                      )}
+                      {typeof event.state?.investigation_confidence === "number" && (
+                        <div className="rounded-md bg-white p-3 text-xs text-slate-700">
+                          <span className="font-semibold">Investigation Confidence:</span>{" "}
+                          {(event.state.investigation_confidence * 100).toFixed(1)}%
+                        </div>
+                      )}
+                      {typeof event.state?.decision_confidence === "number" && (
+                        <div className="rounded-md bg-white p-3 text-xs text-slate-700">
+                          <span className="font-semibold">Decision Confidence:</span>{" "}
+                          {(event.state.decision_confidence * 100).toFixed(1)}%
+                        </div>
+                      )}
+                      {typeof event.state?.audit_trail_count === "number" && (
+                        <div className="rounded-md bg-white p-3 text-xs text-slate-700">
+                          <span className="font-semibold">Audit Trail Entries:</span>{" "}
+                          {event.state.audit_trail_count}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-
-                <p className="mt-3 text-sm leading-relaxed text-slate-700">{event.message}</p>
-
-                {(event.dispute_category || event.final_decision || event.state) && (
-                  <div className="mt-3 grid gap-2 md:grid-cols-2">
-                    {(event.dispute_category || event.state?.dispute_category) && (
-                      <div className="rounded-md bg-white p-3 text-xs text-slate-700">
-                        <span className="font-semibold">Category:</span>{" "}
-                        {event.dispute_category ?? event.state?.dispute_category}
-                      </div>
-                    )}
-                    {(event.final_decision || event.state?.final_decision) && (
-                      <div className="rounded-md bg-white p-3 text-xs text-slate-700">
-                        <span className="font-semibold">Decision:</span>{" "}
-                        {formatStatus(event.final_decision ?? event.state?.final_decision ?? "")}
-                      </div>
-                    )}
-                    {typeof event.state?.triage_confidence === "number" && (
-                      <div className="rounded-md bg-white p-3 text-xs text-slate-700">
-                        <span className="font-semibold">Triage Confidence:</span>{" "}
-                        {(event.state.triage_confidence * 100).toFixed(1)}%
-                      </div>
-                    )}
-                    {typeof event.state?.investigation_confidence === "number" && (
-                      <div className="rounded-md bg-white p-3 text-xs text-slate-700">
-                        <span className="font-semibold">Investigation Confidence:</span>{" "}
-                        {(event.state.investigation_confidence * 100).toFixed(1)}%
-                      </div>
-                    )}
-                    {typeof event.state?.decision_confidence === "number" && (
-                      <div className="rounded-md bg-white p-3 text-xs text-slate-700">
-                        <span className="font-semibold">Decision Confidence:</span>{" "}
-                        {(event.state.decision_confidence * 100).toFixed(1)}%
-                      </div>
-                    )}
-                    {typeof event.state?.audit_trail_count === "number" && (
-                      <div className="rounded-md bg-white p-3 text-xs text-slate-700">
-                        <span className="font-semibold">Audit Trail Entries:</span>{" "}
-                        {event.state.audit_trail_count}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
+            <div ref={feedEndRef} />
           </div>
         )}
       </CardContent>
@@ -524,7 +623,7 @@ export default function CustomerPortalPage() {
                   <span className="font-medium text-slate-900">Reference ID:</span> #{decisionResult.ticket_id}
                 </p>
                 <p>
-                  <span className="font-medium text-slate-900">AI category:</span> {decisionResult.dispute_category}
+                  <span className="font-medium text-slate-900">AI category:</span> {formatDisputeCategory(decisionResult.dispute_category)}
                 </p>
               </div>
 
