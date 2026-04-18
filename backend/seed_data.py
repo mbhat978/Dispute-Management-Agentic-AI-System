@@ -4,10 +4,17 @@ This script creates customers, transactions, ATM logs, and dispute tickets
 covering various scenarios for testing the dispute management system.
 """
 
+import sys
+import io
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from database import SessionLocal, engine, Base
 import models
+
+# Fix Windows console encoding issues
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 # Create all tables
 Base.metadata.create_all(bind=engine)

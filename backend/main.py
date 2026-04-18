@@ -4,8 +4,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Initialize logging configuration
-from .config import setup_logging
-setup_logging()
+try:
+    from .config import setup_logging
+    setup_logging()
+except ImportError:
+    from config import setup_logging
+    setup_logging()
 
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,10 +27,19 @@ import traceback
 from contextlib import suppress
 from loguru import logger
 
-from .database import engine, get_db, Base
-from . import models
-from .agents.state import DisputeState, initialize_dispute_state
-from .agents.orchestrator import get_workflow
+try:
+    from .database import engine, get_db, Base
+    from . import models
+    from .agents.state import DisputeState, initialize_dispute_state
+    from .agents.orchestrator import get_workflow
+except ImportError:
+    from database import engine, get_db, Base
+    import models
+    from agents.state import DisputeState, initialize_dispute_state
+    from agents.orchestrator import get_workflow
+
+# Import AsyncSqliteSaver for checkpointing
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver  # type: ignore[import-untyped]
 
 # Create all tables in the database
 Base.metadata.create_all(bind=engine)
@@ -983,77 +996,97 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
         # Define async function to run the workflow stream
         async def run_workflow_stream():
             nonlocal final_state
-            # Get the workflow instance
-            workflow = await get_workflow()
+            # Get the workflow instance (synchronous now)
+            workflow = get_workflow()
             # Configure thread_id for checkpointing (HITL support)
             config: Dict[str, Any] = {'configurable': {'thread_id': str(new_ticket.id)}}
             
-            async for chunk in workflow.astream(initial_state, config):  # type: ignore[arg-type]
-                # Each chunk is a dict with node name as key and state as value
-                for node_name, node_state in chunk.items():
-                    # Create agent-friendly name mapping
-                    agent_names = {
-                        "triage": "Triage Agent",
-                        "clarification": "Clarification Agent",
-                        "investigator": "Investigation Agent",
-                        "re_investigate": "Re-Investigation Coordinator",
-                        "decision": "Decision Agent"
-                    }
-                    
-                    agent_display_name = agent_names.get(node_name, node_name)
-                    
-                    logger.info(f"[AGENT CALLED] {agent_display_name} (node: {node_name})")
-                    
-                    # Get the latest audit entry to show what the agent is doing
-                    latest_audit_entry = None
-                    if "audit_trail" in node_state and node_state["audit_trail"]:
-                        latest_audit_entry = node_state["audit_trail"][-1]
-                        logger.info(f"[AGENT ACTIVITY] {latest_audit_entry}")
+            # Use AsyncSqliteSaver context manager for checkpointing
+            async with AsyncSqliteSaver.from_conn_string("checkpoints.db") as saver:
+                # Attach the checkpointer to the workflow
+                workflow.checkpointer = saver
+                
+                async for chunk in workflow.astream(initial_state, config):  # type: ignore[arg-type]
+                    # Each chunk is a dict with node name as key and state as value
+                    for node_name, node_state in chunk.items():
+                        # Type check: Handle non-dict states (e.g., __interrupt__ yields tuple)
+                        if not isinstance(node_state, dict):
+                            if node_name == "__interrupt__":
+                                logger.info("[STREAM EVENT] Graph execution paused for Human-in-the-Loop review.")
+                                broadcast_stream_event(
+                                    event_type="processing_paused",
+                                    data={
+                                        "ticket_id": new_ticket.id,
+                                        "node": "__interrupt__",
+                                        "message": "Investigation complete. Awaiting human review."
+                                    }
+                                )
+                                break  # Exit the stream safely
+                            continue  # Skip other non-dict states
+                        
+                        # Create agent-friendly name mapping
+                        agent_names = {
+                            "triage": "Triage Agent",
+                            "clarification": "Clarification Agent",
+                            "investigator": "Investigation Agent",
+                            "re_investigate": "Re-Investigation Coordinator",
+                            "decision": "Decision Agent"
+                        }
+                        
+                        agent_display_name = agent_names.get(node_name, node_name)
+                        
+                        logger.info(f"[AGENT CALLED] {agent_display_name} (node: {node_name})")
+                        
+                        # Get the latest audit entry to show what the agent is doing
+                        latest_audit_entry = None
+                        if "audit_trail" in node_state and node_state["audit_trail"]:
+                            latest_audit_entry = node_state["audit_trail"][-1]
+                            logger.info(f"[AGENT ACTIVITY] {latest_audit_entry}")
 
-                    # Create detailed activity message
-                    activity_details = []
-                    if "dispute_category" in node_state and node_state["dispute_category"]:
-                        activity_details.append(f"Category: {node_state['dispute_category']}")
-                    
-                    if "triage_confidence" in node_state and node_state["triage_confidence"]:
-                        activity_details.append(f"Triage Confidence: {node_state['triage_confidence']:.2%}")
-                    
-                    if "investigation_confidence" in node_state and node_state["investigation_confidence"]:
-                        activity_details.append(f"Investigation Confidence: {node_state['investigation_confidence']:.2%}")
-                    
-                    if "decision_confidence" in node_state and node_state["decision_confidence"]:
-                        activity_details.append(f"Decision Confidence: {node_state['decision_confidence']:.2%}")
-                    
-                    if "final_decision" in node_state and node_state["final_decision"]:
-                        activity_details.append(f"Decision: {node_state['final_decision'].upper()}")
-                    
-                    if activity_details:
-                        logger.info(f"[AGENT STATUS] {' | '.join(activity_details)}")
+                        # Create detailed activity message
+                        activity_details = []
+                        if "dispute_category" in node_state and node_state["dispute_category"]:
+                            activity_details.append(f"Category: {node_state['dispute_category']}")
+                        
+                        if "triage_confidence" in node_state and node_state["triage_confidence"]:
+                            activity_details.append(f"Triage Confidence: {node_state['triage_confidence']:.2%}")
+                        
+                        if "investigation_confidence" in node_state and node_state["investigation_confidence"]:
+                            activity_details.append(f"Investigation Confidence: {node_state['investigation_confidence']:.2%}")
+                        
+                        if "decision_confidence" in node_state and node_state["decision_confidence"]:
+                            activity_details.append(f"Decision Confidence: {node_state['decision_confidence']:.2%}")
+                        
+                        if "final_decision" in node_state and node_state["final_decision"]:
+                            activity_details.append(f"Decision: {node_state['final_decision'].upper()}")
+                        
+                        if activity_details:
+                            logger.info(f"[AGENT STATUS] {' | '.join(activity_details)}")
 
-                    # Prepare enhanced stream payload with agent information
-                    stream_payload = {
-                        "ticket_id": node_state.get("ticket_id"),
-                        "node": node_name,
-                        "agent_name": agent_display_name,
-                        "message": latest_audit_entry or f"{agent_display_name} is processing the dispute",
-                        "activity_summary": " | ".join(activity_details) if activity_details else None,
-                        "state": {
-                            "dispute_category": node_state.get("dispute_category"),
-                            "final_decision": node_state.get("final_decision"),
-                            "triage_confidence": node_state.get("triage_confidence"),
-                            "investigation_confidence": node_state.get("investigation_confidence"),
-                            "decision_confidence": node_state.get("decision_confidence"),
-                            "audit_trail_count": len(node_state.get("audit_trail", [])),
-                            "gathered_data_keys": list(node_state.get("gathered_data", {}).keys()),
-                            "working_memory": node_state.get("working_memory", {}),
-                        },
-                    }
-                    broadcast_stream_event("agent_update", stream_payload)
+                        # Prepare enhanced stream payload with agent information
+                        stream_payload = {
+                            "ticket_id": node_state.get("ticket_id"),
+                            "node": node_name,
+                            "agent_name": agent_display_name,
+                            "message": latest_audit_entry or f"{agent_display_name} is processing the dispute",
+                            "activity_summary": " | ".join(activity_details) if activity_details else None,
+                            "state": {
+                                "dispute_category": node_state.get("dispute_category"),
+                                "final_decision": node_state.get("final_decision"),
+                                "triage_confidence": node_state.get("triage_confidence"),
+                                "investigation_confidence": node_state.get("investigation_confidence"),
+                                "decision_confidence": node_state.get("decision_confidence"),
+                                "audit_trail_count": len(node_state.get("audit_trail", [])),
+                                "gathered_data_keys": list(node_state.get("gathered_data", {}).keys()),
+                                "working_memory": node_state.get("working_memory", {}),
+                            },
+                        }
+                        broadcast_stream_event("agent_update", stream_payload)
 
-                    logger.info("-" * 80)
+                        logger.info("-" * 80)
 
-                    # Keep track of the latest state
-                    final_state = cast(DisputeState, node_state)
+                        # Keep track of the latest state
+                        final_state = cast(DisputeState, node_state)
             
             # Check if workflow was interrupted (paused at checkpoint)
             if final_state and not final_state.get("final_decision"):
@@ -1223,50 +1256,55 @@ async def resume_dispute(
         # Configure thread_id for checkpointing
         config: Dict[str, Any] = {'configurable': {'thread_id': str(ticket_id)}}
         
-        # Get the workflow instance
-        workflow = await get_workflow()
-        
-        # Update the graph state with human decision
-        workflow.update_state(
-            config,  # type: ignore[arg-type]
-            {
-                "final_decision": request.override_decision,
-                "decision_reasoning": {
-                    "decision": request.override_decision,
-                    "confidence": 1.0,
-                    "reasoning": f"Human override: {request.human_notes or 'Manual review completed'}",
-                    "human_review": True
-                },
-                "decision_confidence": 1.0,
-                "audit_trail": [f"Human Review: Decision overridden to '{request.override_decision}'. Notes: {request.human_notes or 'None'}"]
-            }
-        )
-        
-        logger.info("[HITL] State updated with human decision, resuming workflow...")
+        # Get the workflow instance (synchronous now)
+        workflow = get_workflow()
         
         # Resume the workflow from the checkpoint
         final_state = None
         
         async def run_resume_workflow():
             nonlocal final_state
-            async for chunk in workflow.astream(None, config):  # type: ignore[arg-type]
-                for node_name, node_state in chunk.items():
-                    logger.info(f"[RESUME] Processing node: {node_name}")
-                    
-                    broadcast_stream_event(
-                        "agent_update",
-                        {
-                            "ticket_id": ticket_id,
-                            "node": node_name,
-                            "message": f"Resuming workflow at {node_name}",
-                            "state": {
-                                "final_decision": node_state.get("final_decision"),
-                                "decision_confidence": node_state.get("decision_confidence")
+            # Use AsyncSqliteSaver context manager for checkpointing
+            async with AsyncSqliteSaver.from_conn_string("checkpoints.db") as saver:
+                # Attach the checkpointer to the workflow
+                workflow.checkpointer = saver
+                
+                # Update the graph state with human decision
+                workflow.update_state(
+                    config,  # type: ignore[arg-type]
+                    {
+                        "final_decision": request.override_decision,
+                        "decision_reasoning": {
+                            "decision": request.override_decision,
+                            "confidence": 1.0,
+                            "reasoning": f"Human override: {request.human_notes or 'Manual review completed'}",
+                            "human_review": True
+                        },
+                        "decision_confidence": 1.0,
+                        "audit_trail": [f"Human Review: Decision overridden to '{request.override_decision}'. Notes: {request.human_notes or 'None'}"]
+                    }
+                )
+                
+                logger.info("[HITL] State updated with human decision, resuming workflow...")
+                
+                async for chunk in workflow.astream(None, config):  # type: ignore[arg-type]
+                    for node_name, node_state in chunk.items():
+                        logger.info(f"[RESUME] Processing node: {node_name}")
+                        
+                        broadcast_stream_event(
+                            "agent_update",
+                            {
+                                "ticket_id": ticket_id,
+                                "node": node_name,
+                                "message": f"Resuming workflow at {node_name}",
+                                "state": {
+                                    "final_decision": node_state.get("final_decision"),
+                                    "decision_confidence": node_state.get("decision_confidence")
+                                }
                             }
-                        }
-                    )
-                    
-                    final_state = cast(DisputeState, node_state)
+                        )
+                        
+                        final_state = cast(DisputeState, node_state)
         
         # Run the async workflow
         await run_resume_workflow()
@@ -1408,16 +1446,15 @@ async def get_analytics(db: Session = Depends(get_db)):
         logger.info("%s", "=" * 80)
         
         # Return analytics in clean JSON structure
+        # Frontend expects: total_disputes, auto_resolution_rate, human_intervention_required, total_fraud_prevented
         return {
             "status": "success",
-            "analytics": {
-                "total_tickets": total_tickets,
-                "auto_resolved_count": auto_resolved_count,
-                "human_review_count": human_review_count,
-                "auto_resolution_rate": auto_resolution_rate,
-                "total_fraud_prevented": total_fraud_prevented,
-                "fraud_tickets_prevented": fraud_ticket_count
-            },
+            "total_disputes": total_tickets,
+            "auto_resolved_count": auto_resolved_count,
+            "human_intervention_required": human_review_count,
+            "auto_resolution_rate": auto_resolution_rate,
+            "total_fraud_prevented": total_fraud_prevented,
+            "fraud_tickets_prevented": fraud_ticket_count,
             "metadata": {
                 "timestamp": datetime.utcnow().isoformat(),
                 "description": "Executive Analytics Dashboard - Proving Business Value of Agentic AI System"

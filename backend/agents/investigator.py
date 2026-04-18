@@ -16,11 +16,18 @@ import sys
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from .. import mcp_client as banking_tools
-from .. import models
-from ..database import SessionLocal
-from .state import DisputeState
-from .config import OPENAI_API_KEY, INVESTIGATOR_MODEL, INVESTIGATOR_TEMPERATURE
+try:
+    from .. import mcp_client as banking_tools
+    from .. import models
+    from ..database import SessionLocal
+    from .state import DisputeState
+    from .config import OPENAI_API_KEY, INVESTIGATOR_MODEL, INVESTIGATOR_TEMPERATURE
+except ImportError:
+    import mcp_client as banking_tools
+    import models
+    from database import SessionLocal
+    from agents.state import DisputeState
+    from agents.config import OPENAI_API_KEY, INVESTIGATOR_MODEL, INVESTIGATOR_TEMPERATURE
 
 
 def investigator_node(state: DisputeState) -> Dict[str, Any]:

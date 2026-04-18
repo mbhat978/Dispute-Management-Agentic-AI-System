@@ -142,10 +142,8 @@ def check_duplicate_transactions_tool(
         - Duplicates < 1 hour apart → Medium confidence, investigate merchant
         - Duplicates spread over hours → May be legitimate purchases
     """
-    # Convert string date to datetime object
-    date_obj = datetime.fromisoformat(date)
     return banking_tools.check_duplicate_transactions(
-        customer_id, merchant_name, amount, date_obj, time_window_hours
+        customer_id, merchant_name, amount, date, time_window_hours
     )
 
 
@@ -310,6 +308,28 @@ def check_merchant_refund_status_tool(transaction_id: int) -> Dict[str, Any]:
     return banking_tools.check_merchant_refund_status(transaction_id)
 
 
+@tool
+def query_compliance_policy_tool(query: str) -> Dict[str, Any]:
+    """
+    Query the compliance MCP server for the most relevant dispute policy text.
+
+    Use this tool when the dispute requires policy guidance, compliance validation,
+    escalation rules, or interpretation of bank dispute handling rules.
+
+    Args:
+        query (str): Natural language query describing the dispute or policy question.
+
+    Returns:
+        Dict containing whether a policy was matched, the relevant policy text,
+        and the source of the policy guidance.
+
+    Example:
+        To check duplicate charge policy:
+        query_compliance_policy_tool("What is the policy for duplicate card transactions within 5 minutes?")
+    """
+    return banking_tools.query_compliance_policy(query)
+
+
 # ============================================================================
 # TOOL LIST FOR AGENT CONFIGURATION
 # ============================================================================
@@ -324,7 +344,8 @@ ALL_TOOLS = [
     initiate_refund_tool,
     route_to_human_tool,
     get_loan_details_tool,
-    check_merchant_refund_status_tool
+    check_merchant_refund_status_tool,
+    query_compliance_policy_tool
 ]
 
 

@@ -15,17 +15,30 @@ from langchain_core.prompts import ChatPromptTemplate
 import sys
 import os
 
-from .. import mcp_client as banking_tools
-from .. import models
-from ..database import SessionLocal
-from .state import DisputeState
-from .config import (
-    OPENAI_API_KEY,
-    DECISION_MODEL,
-    DECISION_TEMPERATURE,
-    should_escalate_to_human,
-    get_human_review_priority,
-)
+try:
+    from .. import mcp_client as banking_tools
+    from .. import models
+    from ..database import SessionLocal
+    from .state import DisputeState
+    from .config import (
+        OPENAI_API_KEY,
+        DECISION_MODEL,
+        DECISION_TEMPERATURE,
+        should_escalate_to_human,
+        get_human_review_priority,
+    )
+except ImportError:
+    import mcp_client as banking_tools
+    import models
+    from database import SessionLocal
+    from agents.state import DisputeState
+    from agents.config import (
+        OPENAI_API_KEY,
+        DECISION_MODEL,
+        DECISION_TEMPERATURE,
+        should_escalate_to_human,
+        get_human_review_priority,
+    )
 
 
 def decision_node(state: DisputeState) -> Dict[str, Any]:
