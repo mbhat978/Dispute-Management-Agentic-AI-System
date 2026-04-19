@@ -22,6 +22,12 @@ Rule 6: Failed transactions with account deduction are auto-approved. If transac
 Rule 7: Insufficient, ambiguous, or contradictory evidence requires human review. When evidence does not clearly support approval or rejection, the case must be escalated to a human reviewer.
 
 Rule 8: Gold and Platinum customers require higher scrutiny for auto-decisions. Premium-tier customers should have stronger supporting evidence before fully automated resolution is used.
+
+Rule 9: Merchant disputes for unreceived services require human review. Chargebacks should be initiated, but auto-approvals are not permitted until evidence is manually reviewed.
+
+Rule 10: Incorrect amount disputes can be auto-approved for a partial refund ONLY IF the verified receipt amount is lower than the billed ledger amount.
+
+Rule 11: For 'Refund Not Received' cases, if the gateway status is 'Refund Pending at Gateway', the dispute must be auto-rejected with instructions for the customer to wait 3-5 business days.
 """.strip()
 
 

@@ -689,6 +689,91 @@ def check_merchant_refund_status(transaction_id: int) -> Dict[str, Any]:
         db.close()
 
 
+def verify_receipt_amount(transaction_id: int, claimed_amount: float) -> Dict[str, Any]:
+    """
+    Verify a customer-uploaded receipt amount against the ledger.
+    
+    This function simulates OCR checking of a customer-uploaded receipt
+    against the transaction ledger. It's useful for handling 'Incorrect Amount'
+    disputes where customers claim they were charged more than what appears
+    on their receipt.
+    
+    Args:
+        transaction_id (int): The unique identifier of the transaction.
+        claimed_amount (float): The amount the customer claims they should have been charged.
+        
+    Returns:
+        Dict[str, Any]: A dictionary containing:
+            - transaction_id: Transaction ID
+            - billed_amount: The amount actually charged
+            - claimed_amount: The amount customer claims
+            - is_receipt_valid: Boolean indicating if receipt is valid
+            - discrepancy_amount: Difference between billed and claimed amounts
+            - message: Human-readable explanation
+            - error: Error message if transaction not found
+            
+    Example:
+        >>> result = verify_receipt_amount(1, 75.00)
+        >>> print(result['message'])
+        Receipt verified. Billed amount exceeds claimed amount.
+    """
+    # Simulates OCR checking a customer-uploaded receipt against the ledger
+    db = SessionLocal()
+    try:
+        transaction = db.query(models.Transaction).filter(models.Transaction.id == transaction_id).first()
+        if not transaction:
+            return {"error": "Transaction not found"}
+        
+        # Mock logic: Assume the claimed amount is correct if it's less than the billed amount
+        transaction_amount = cast(float, transaction.amount)
+        is_match = claimed_amount < transaction_amount
+        difference = transaction_amount - claimed_amount
+        return {
+            "transaction_id": transaction_id,
+            "billed_amount": transaction_amount,
+            "claimed_amount": claimed_amount,
+            "is_receipt_valid": is_match,
+            "discrepancy_amount": difference if is_match else 0.0,
+            "message": "Receipt verified. Billed amount exceeds claimed amount." if is_match else "Claimed amount invalid or higher than billed."
+        }
+    finally:
+        db.close()
+
+
+def initiate_chargeback(transaction_id: int, reason: str) -> Dict[str, Any]:
+    """
+    Initiate a chargeback with the card network (Visa/Mastercard).
+    
+    This function simulates filing a chargeback with the card network for
+    merchant disputes. It's useful when merchants are unresponsive or when
+    goods/services were not provided as promised.
+    
+    Args:
+        transaction_id (int): The unique identifier of the transaction.
+        reason (str): The reason for the chargeback (e.g., "goods_not_provided",
+                     "merchant_unresponsive", "defective_merchandise").
+        
+    Returns:
+        Dict[str, Any]: A dictionary containing:
+            - transaction_id: Transaction ID
+            - chargeback_status: Status of the chargeback ("initiated")
+            - network_reason_code: Card network reason code
+            - message: Human-readable confirmation message
+            
+    Example:
+        >>> result = initiate_chargeback(5, "goods_not_provided")
+        >>> print(result['message'])
+        Chargeback initiated with card network for reason: goods_not_provided. Provisional credit may be applied.
+    """
+    # Simulates filing a chargeback with Visa/Mastercard network
+    return {
+        "transaction_id": transaction_id,
+        "chargeback_status": "initiated",
+        "network_reason_code": "goods_not_provided",
+        "message": f"Chargeback initiated with card network for reason: {reason}. Provisional credit may be applied."
+    }
+
+
 # Helper function to get all available tools for agent introspection
 def get_available_tools() -> List[Dict[str, str]]:
     """
@@ -743,6 +828,14 @@ def get_available_tools() -> List[Dict[str, str]]:
         {
             "name": "check_merchant_refund_status",
             "description": "Check refund status with merchant/payment gateway to verify if refund has been initiated"
+        },
+        {
+            "name": "verify_receipt_amount",
+            "description": "Verify customer-uploaded receipt amount against ledger for 'Incorrect Amount' disputes"
+        },
+        {
+            "name": "initiate_chargeback",
+            "description": "Initiate a chargeback with card network (Visa/Mastercard) for merchant disputes"
         }
     ]
     return tools

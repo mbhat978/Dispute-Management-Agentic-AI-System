@@ -59,6 +59,8 @@ def _rule_based_triage_fallback(state: DisputeState) -> Dict[str, Any]:
         category = "merchant_dispute"
     elif any(term in query_lower for term in ["failed", "declined", "error", "not completed", "deducted"]):
         category = "failed_transaction"
+    elif any(term in query_lower for term in ["wrong amount", "incorrect amount", "charged extra", "charged more"]):
+        category = "incorrect_amount"
     else:
         category = "unknown"
     

@@ -581,6 +581,21 @@ def _validate_decision_against_rules(
     if proposed_decision not in {"auto_approved", "auto_rejected", "human_review_required"}:
         return "human_review_required", "Invalid proposed decision"
 
+    # Strict rule enforcement for specific categories
+    if category == "merchant_dispute":
+        return "human_review_required", "Merchant disputes strictly require manual evidence review"
+        
+    if category == "refund_not_received":
+        refund_status = gathered_data.get("merchant_refund_status", {})
+        if "Pending" in refund_status.get("refund_status", ""):
+            return "auto_rejected", "Refund is already pending at gateway. Customer must wait."
+            
+    if category == "incorrect_amount":
+        receipt_data = gathered_data.get("receipt_verification", {})
+        if receipt_data.get("is_receipt_valid", False):
+            return "auto_approved", "Verified receipt amount is lower than billed amount."
+        return "human_review_required", "Receipt verification failed or missing."
+
     return proposed_decision, ""
 
 
@@ -599,6 +614,17 @@ def _execute_decision_actions(
         if category == "fraud":
             banking_tools.block_card(customer_id, f"Suspected fraud for disputed transaction {transaction_id}")
             banking_tools.initiate_refund(transaction_id, amount, "Fraud dispute approved")
+        elif category == "incorrect_amount":
+            # Handle partial refund for incorrect amount disputes
+            receipt_data = gathered_data.get("receipt_verification", {})
+            partial_amount = receipt_data.get("partial_amount")
+            if partial_amount is not None and partial_amount > 0:
+                banking_tools.initiate_refund(transaction_id, partial_amount, "Incorrect amount partial refund")
+                logger.info(f"[DECISION AGENT] Partial refund initiated: ${partial_amount} for transaction {transaction_id}")
+            else:
+                # Fallback to full refund if partial amount not available
+                banking_tools.initiate_refund(transaction_id, amount, "Incorrect amount dispute approved")
+                logger.warning(f"[DECISION AGENT] Partial amount not found, initiated full refund for transaction {transaction_id}")
         elif category in {"atm_failure", "duplicate", "failed_transaction"}:
             banking_tools.initiate_refund(transaction_id, amount, f"{category} dispute approved")
     elif final_decision == "human_review_required":

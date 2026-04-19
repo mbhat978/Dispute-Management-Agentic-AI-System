@@ -14,7 +14,9 @@ from banking_tools import (
     initiate_refund,
     route_to_human,
     get_loan_details,
-    check_merchant_refund_status
+    check_merchant_refund_status,
+    verify_receipt_amount,
+    initiate_chargeback
 )
 
 
@@ -168,6 +170,47 @@ def check_merchant_refund_status_tool(transaction_id: int) -> dict:
         Dictionary containing refund status information and recommendations
     """
     return check_merchant_refund_status(transaction_id)
+
+
+@mcp.tool()
+def verify_receipt_amount_tool(transaction_id: int, claimed_amount: float) -> dict:
+    """
+    Verify a customer-uploaded receipt amount against the ledger.
+    
+    This tool simulates OCR checking of a customer-uploaded receipt
+    against the transaction ledger. Useful for handling 'Incorrect Amount'
+    disputes where customers claim they were charged more than what appears
+    on their receipt.
+    
+    Args:
+        transaction_id: The unique identifier of the transaction
+        claimed_amount: The amount the customer claims they should have been charged
+        
+    Returns:
+        Dictionary containing verification results including whether the receipt
+        is valid and the discrepancy amount
+    """
+    return verify_receipt_amount(transaction_id, claimed_amount)
+
+
+@mcp.tool()
+def initiate_chargeback_tool(transaction_id: int, reason: str) -> dict:
+    """
+    Initiate a chargeback with the card network (Visa/Mastercard).
+    
+    This tool simulates filing a chargeback with the card network for
+    merchant disputes. Useful when merchants are unresponsive or when
+    goods/services were not provided as promised.
+    
+    Args:
+        transaction_id: The unique identifier of the transaction
+        reason: The reason for the chargeback (e.g., "goods_not_provided",
+                "merchant_unresponsive", "defective_merchandise")
+        
+    Returns:
+        Dictionary containing chargeback status and confirmation message
+    """
+    return initiate_chargeback(transaction_id, reason)
 
 
 if __name__ == "__main__":

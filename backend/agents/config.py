@@ -84,6 +84,7 @@ DISPUTE_CATEGORIES = {
     "failed_transaction": "Transaction failed but amount was deducted",
     "loan_dispute": "Dispute related to loan account or EMI",
     "refund_not_received": "Refund not received from merchant",
+    "incorrect_amount": "Amount charged differs from expected or receipt amount",
     "unknown": "Category not yet determined"
 }
 
