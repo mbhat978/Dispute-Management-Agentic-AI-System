@@ -83,11 +83,12 @@ class DisputeTicket(Base):
     transaction_id = Column(Integer, ForeignKey("transactions.id"), nullable=False)
     customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False)
     dispute_reason = Column(Text, nullable=False)
+    dispute_category = Column(String(100), nullable=True)  # Category from triage: 'fraud', 'duplicate', 'atm_failure', etc.
     status = Column(
-        String(50), 
-        nullable=False, 
+        String(50),
+        nullable=False,
         default='open'
-    )  # 'open', 'under_investigation', 'auto_approved', 'auto_rejected', 'human_review_required'
+    )  # 'open', 'under_investigation', 'auto_approved', 'auto_rejected', 'human_review_required', 'pending_review'
     resolution_notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

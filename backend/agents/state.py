@@ -62,6 +62,9 @@ class DisputeState(TypedDict):
     audit_trail: List[str]
     final_decision: str
     
+    # Human-in-the-loop override field
+    human_override: NotRequired[str | None]
+    
     # Enhanced ReAct fields (optional with NotRequired)
     triage_confidence: NotRequired[float]
     investigation_confidence: NotRequired[float]

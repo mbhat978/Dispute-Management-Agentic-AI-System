@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import datetime
 from typing import cast, Any, Optional, Dict
+from langchain_core.runnables import RunnableConfig
 from sse_starlette.sse import EventSourceResponse
 import asyncio
 import json
@@ -495,82 +496,61 @@ async def get_all_disputes(db: Session = Depends(get_db)):
 
 @app.get("/api/disputes/{ticket_id}")
 async def get_dispute_by_id(ticket_id: int, db: Session = Depends(get_db)):
-    """
-    Get a single dispute ticket with full details including:
-    - Dispute ticket information
-    - Customer details
-    - Transaction details
-    - Complete audit log ordered by timestamp
-    
-    This endpoint is crucial for AI governance and explainability,
-    providing a complete view of the AI decision-making process.
-    
-    Args:
-        ticket_id: The dispute ticket ID
-        db: Database session
-        
-    Returns:
-        Dict containing:
-        - dispute: DisputeTicket details
-        - customer: Customer information
-        - transaction: Transaction details
-        - audit_logs: Complete audit trail ordered by timestamp
-        
-    Raises:
-        HTTPException: If ticket not found
-    """
     try:
-        # Query the dispute ticket with all relationships
-        dispute = db.query(models.DisputeTicket).filter(
-            models.DisputeTicket.id == ticket_id
-        ).first()
-        
+        dispute = db.query(models.DisputeTicket).filter(models.DisputeTicket.id == ticket_id).first()
         if not dispute:
-            raise_api_error(
-                404,
-                f"Dispute ticket with ID {ticket_id} not found.",
-                code="DISPUTE_NOT_FOUND",
-                details={"ticket_id": ticket_id},
-                ticket_id=ticket_id,
-            )
-        dispute = cast(models.DisputeTicket, dispute)
+            raise HTTPException(status_code=404, detail=f"Dispute {ticket_id} not found")
+            
+        customer = db.query(models.Customer).filter(models.Customer.id == dispute.customer_id).first()
+        transaction = db.query(models.Transaction).filter(models.Transaction.id == dispute.transaction_id).first()
         
-        # Get customer details
-        customer = db.query(models.Customer).filter(
-            models.Customer.id == dispute.customer_id
-        ).first()
+        audit_logs_db = db.query(models.AuditLog).filter(models.AuditLog.ticket_id == ticket_id).order_by(models.AuditLog.timestamp.asc()).all()
         
-        if not customer:
-            raise_api_error(
-                404,
-                f"Customer not found for dispute ticket {ticket_id}.",
-                code="DISPUTE_CUSTOMER_NOT_FOUND",
-                details={"ticket_id": ticket_id},
-                ticket_id=ticket_id,
-            )
-        customer = cast(models.Customer, customer)
+        formatted_logs = [
+            {
+                "id": log.id,
+                "agent_name": log.agent_name,
+                "action_type": log.action_type,
+                "description": log.description,
+                "timestamp": log.timestamp.isoformat()
+            }
+            for log in audit_logs_db
+        ]
         
-        # Get transaction details
-        transaction = db.query(models.Transaction).filter(
-            models.Transaction.id == dispute.transaction_id
-        ).first()
+        investigation_evidence = None
         
-        if not transaction:
-            raise_api_error(
-                404,
-                f"Transaction not found for dispute ticket {ticket_id}.",
-                code="DISPUTE_TRANSACTION_NOT_FOUND",
-                details={"ticket_id": ticket_id},
-                ticket_id=ticket_id,
-            )
-        transaction = cast(models.Transaction, transaction)
-        
-        # Get audit logs ordered by timestamp
-        audit_logs = db.query(models.AuditLog).filter(
-            models.AuditLog.ticket_id == ticket_id
-        ).order_by(models.AuditLog.timestamp.asc()).all()
-        
-        # Format the response
+        # PEEK INTO LANGGRAPH MEMORY IF PAUSED
+        if dispute.status in ['under_investigation', 'pending_review']:
+            try:
+                from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+                # get_workflow is already imported at the top of main.py
+                
+                async with AsyncSqliteSaver.from_conn_string("checkpoints.db") as checkpointer:
+                    workflow = get_workflow()
+                    workflow.checkpointer = checkpointer
+                    config: RunnableConfig = {"configurable": {"thread_id": str(ticket_id)}}
+                    
+                    # Use official LangGraph API to get the parsed state
+                    state_snapshot = await workflow.aget_state(config)
+                    
+                    if state_snapshot and hasattr(state_snapshot, 'values'):
+                        state_values = state_snapshot.values
+                        
+                        if "gathered_data" in state_values and state_values["gathered_data"]:
+                            investigation_evidence = json.dumps(state_values["gathered_data"], indent=2, default=str)
+                            
+                        if not formatted_logs and "audit_trail" in state_values:
+                            for idx, entry in enumerate(state_values["audit_trail"]):
+                                formatted_logs.append({
+                                    "id": f"temp-{idx}",
+                                    "agent_name": "AI System",
+                                    "action_type": "thought",
+                                    "description": entry,
+                                    "timestamp": dispute.created_at.isoformat()
+                                })
+            except Exception as e:
+                logger.error(f"Could not read from checkpointer: {e}")
+
         return {
             "dispute": {
                 "id": dispute.id,
@@ -578,45 +558,17 @@ async def get_dispute_by_id(ticket_id: int, db: Session = Depends(get_db)):
                 "status": dispute.status,
                 "resolution_notes": dispute.resolution_notes,
                 "created_at": dispute.created_at.isoformat(),
-                "updated_at": dispute.updated_at.isoformat()
             },
-            "customer": {
-                "id": customer.id,
-                "name": customer.name,
-                "account_tier": customer.account_tier,
-                "average_monthly_balance": customer.average_monthly_balance
-            },
-            "transaction": {
-                "id": transaction.id,
-                "amount": transaction.amount,
-                "merchant_name": transaction.merchant_name,
-                "transaction_date": transaction.transaction_date.isoformat(),
-                "status": transaction.status,
-                "is_international": transaction.is_international
-            },
-            "audit_logs": [
-                {
-                    "id": log.id,
-                    "agent_name": log.agent_name,
-                    "action_type": log.action_type,
-                    "description": log.description,
-                    "timestamp": log.timestamp.isoformat()
-                }
-                for log in audit_logs
-            ]
+            "customer": {"id": customer.id, "name": customer.name, "account_tier": customer.account_tier} if customer else {},
+            "transaction": {"id": transaction.id, "amount": transaction.amount, "merchant_name": transaction.merchant_name, "status": transaction.status} if transaction else {},
+            "audit_logs": formatted_logs,
+            "investigation_evidence": investigation_evidence
         }
-        
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("Error fetching dispute details: {}", str(e))
-        raise_api_error(
-            500,
-            "Unable to load dispute details.",
-            code="DISPUTE_DETAILS_FETCH_FAILED",
-            details={"ticket_id": ticket_id, "reason": str(e)},
-            ticket_id=ticket_id,
-        )
+        logger.exception(f"Error fetching dispute details: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.post("/api/disputes/{ticket_id}/approve")
@@ -995,11 +947,16 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
 
         # Define async function to run the workflow stream
         async def run_workflow_stream():
-            nonlocal final_state
+            nonlocal final_state, db, new_ticket
+            
+            # Ensure new_ticket is not None before proceeding
+            if new_ticket is None:
+                raise ValueError("new_ticket must be initialized before running workflow stream")
+            
             # Get the workflow instance (synchronous now)
             workflow = get_workflow()
             # Configure thread_id for checkpointing (HITL support)
-            config: Dict[str, Any] = {'configurable': {'thread_id': str(new_ticket.id)}}
+            config: RunnableConfig = {'configurable': {'thread_id': str(new_ticket.id)}}
             
             # Use AsyncSqliteSaver context manager for checkpointing
             async with AsyncSqliteSaver.from_conn_string("checkpoints.db") as saver:
@@ -1013,6 +970,20 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
                         if not isinstance(node_state, dict):
                             if node_name == "__interrupt__":
                                 logger.info("[STREAM EVENT] Graph execution paused for Human-in-the-Loop review.")
+                                
+                                # Update database: Set status to 'pending_review' for Employee Dashboard
+                                try:
+                                    ticket_to_update = db.query(models.DisputeTicket).filter(
+                                        models.DisputeTicket.id == new_ticket.id
+                                    ).first()
+                                    if ticket_to_update:
+                                        ticket_to_update.status = 'pending_review'  # type: ignore[assignment]
+                                        db.commit()
+                                        logger.info(f"[DB UPDATE] Ticket #{new_ticket.id} status updated to 'pending_review'")
+                                except Exception as db_error:
+                                    logger.error(f"[DB ERROR] Failed to update ticket status on interrupt: {db_error}")
+                                    db.rollback()
+                                
                                 broadcast_stream_event(
                                     event_type="processing_paused",
                                     data={
@@ -1023,6 +994,27 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
                                 )
                                 break  # Exit the stream safely
                             continue  # Skip other non-dict states
+                        
+                        # Update database after triage node completes
+                        if node_name == "triage" and node_state.get("dispute_category"):
+                            try:
+                                # Ensure new_ticket is not None (it should be assigned before this point)
+                                if new_ticket is None:
+                                    logger.error("[DB ERROR] new_ticket is None, cannot update dispute_category")
+                                    continue
+                                
+                                ticket_to_update = db.query(models.DisputeTicket).filter(
+                                    models.DisputeTicket.id == new_ticket.id
+                                ).first()
+                                if ticket_to_update:
+                                    dispute_category = node_state.get("dispute_category")
+                                    if dispute_category:  # Only update if we have a valid category
+                                        ticket_to_update.dispute_category = dispute_category  # type: ignore[assignment]
+                                        db.commit()
+                                        logger.info(f"[DB UPDATE] Ticket #{new_ticket.id} dispute_category updated to '{dispute_category}'")
+                            except Exception as db_error:
+                                logger.error(f"[DB ERROR] Failed to update dispute_category: {db_error}")
+                                db.rollback()
                         
                         # Create agent-friendly name mapping
                         agent_names = {
@@ -1218,11 +1210,29 @@ async def resume_dispute(
             models.DisputeTicket.id == ticket_id
         ).first()
         
-        if not dispute:
+        if dispute is None:
             raise_api_error(
                 404,
                 f"Dispute ticket #{ticket_id} not found.",
                 code="TICKET_NOT_FOUND",
+                ticket_id=ticket_id
+            )
+        
+        # Type assertion: dispute is now guaranteed to be DisputeTicket, not None
+        assert dispute is not None
+        
+        # Validate that the ticket is in pending_review status
+        # Access the actual value from the ORM object, not the column descriptor
+        current_status = str(dispute.status)
+        if current_status != "pending_review":
+            raise_api_error(
+                400,
+                f"Dispute ticket #{ticket_id} is not in 'pending_review' status. Current status: {current_status}",
+                code="INVALID_STATUS",
+                details={
+                    "current_status": current_status,
+                    "required_status": "pending_review"
+                },
                 ticket_id=ticket_id
             )
         
@@ -1254,7 +1264,7 @@ async def resume_dispute(
         )
         
         # Configure thread_id for checkpointing
-        config: Dict[str, Any] = {'configurable': {'thread_id': str(ticket_id)}}
+        config: RunnableConfig = {'configurable': {'thread_id': str(ticket_id)}}
         
         # Get the workflow instance (synchronous now)
         workflow = get_workflow()
@@ -1269,24 +1279,16 @@ async def resume_dispute(
                 # Attach the checkpointer to the workflow
                 workflow.checkpointer = saver
                 
-                # Update the graph state with human decision
-                workflow.update_state(
+                # Inject the human's decision back into the graph as human_override
+                # This allows the Decision agent to skip LLM call and use the human decision
+                await workflow.aupdate_state(
                     config,  # type: ignore[arg-type]
-                    {
-                        "final_decision": request.override_decision,
-                        "decision_reasoning": {
-                            "decision": request.override_decision,
-                            "confidence": 1.0,
-                            "reasoning": f"Human override: {request.human_notes or 'Manual review completed'}",
-                            "human_review": True
-                        },
-                        "decision_confidence": 1.0,
-                        "audit_trail": [f"Human Review: Decision overridden to '{request.override_decision}'. Notes: {request.human_notes or 'None'}"]
-                    }
+                    {"human_override": request.override_decision}
                 )
                 
-                logger.info("[HITL] State updated with human decision, resuming workflow...")
+                logger.info("[HITL] State updated with human_override, resuming workflow...")
                 
+                # Resume the graph execution so the Decision agent wakes up
                 async for chunk in workflow.astream(None, config):  # type: ignore[arg-type]
                     for node_name, node_state in chunk.items():
                         logger.info(f"[RESUME] Processing node: {node_name}")

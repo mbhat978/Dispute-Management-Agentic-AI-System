@@ -68,26 +68,67 @@ def decision_node(state: DisputeState) -> Dict[str, Any]:
         amount = trans_details.get("amount", 0.0)
         customer_tier = trans_details.get("account_tier", "Basic")
 
-        llm_reasoning = _generate_decision_reasoning(state)
-        proposed_decision = llm_reasoning.get("decision", "human_review_required")
-        llm_confidence = float(llm_reasoning.get("confidence", 0.5))
+        # Check if human has overridden the decision
+        human_override = state.get("human_override")
+        
+        if human_override:
+            # Human override present - skip LLM call and validation entirely
+            logger.info(f"[DECISION AGENT] Human override detected: {human_override}")
+            
+            # Map human override to correct final status
+            if human_override == "approved":
+                final_decision = "resolved_approved"
+                proposed_decision = "approved"
+            elif human_override == "rejected":
+                final_decision = "resolved_rejected"
+                proposed_decision = "rejected"
+            else:
+                # Fallback for unexpected values
+                final_decision = human_override
+                proposed_decision = human_override
+            
+            llm_confidence = 1.0
+            rule_reason = "Human override applied"
+            
+            # Create reasoning structure for human override
+            llm_reasoning = {
+                "decision": final_decision,
+                "confidence": 1.0,
+                "justification": f"Human reviewer override: {human_override}",
+                "analysis": "Human-in-the-loop review completed. Decision made by human reviewer.",
+                "evidence_used": list(gathered_data.keys()),
+                "risk_factors": [],
+                "recommended_actions": ["execute_human_decision"]
+            }
+            
+            justification = llm_reasoning["justification"]
+            analysis = llm_reasoning["analysis"]
+            evidence_used = llm_reasoning["evidence_used"]
+            risk_factors = llm_reasoning["risk_factors"]
+            recommended_actions = llm_reasoning["recommended_actions"]
+            
+        else:
+            # No human override - proceed with normal LLM-based decision
+            llm_reasoning = _generate_decision_reasoning(state)
+            proposed_decision = llm_reasoning.get("decision", "human_review_required")
+            llm_confidence = float(llm_reasoning.get("confidence", 0.5))
 
-        final_decision, rule_reason = _validate_decision_against_rules(
-            proposed_decision=proposed_decision,
-            category=category,
-            gathered_data=gathered_data,
-            amount=float(amount),
-            confidence=llm_confidence,
-            customer_tier=str(customer_tier),
-        )
-        if rule_reason:
-            escalation_reasons.append(rule_reason)
+            final_decision, rule_reason = _validate_decision_against_rules(
+                proposed_decision=proposed_decision,
+                category=category,
+                gathered_data=gathered_data,
+                amount=float(amount),
+                confidence=llm_confidence,
+                customer_tier=str(customer_tier),
+            )
+            if rule_reason:
+                escalation_reasons.append(rule_reason)
 
-        justification = llm_reasoning.get("justification", "No justification provided.")
-        analysis = llm_reasoning.get("analysis", "No analysis provided.")
-        evidence_used = llm_reasoning.get("evidence_used", [])
-        risk_factors = llm_reasoning.get("risk_factors", [])
-        recommended_actions = llm_reasoning.get("recommended_actions", [])
+            justification = llm_reasoning.get("justification", "No justification provided.")
+            analysis = llm_reasoning.get("analysis", "No analysis provided.")
+            evidence_used = llm_reasoning.get("evidence_used", [])
+            risk_factors = llm_reasoning.get("risk_factors", [])
+            recommended_actions = llm_reasoning.get("recommended_actions", [])
 
         _execute_decision_actions(
             final_decision=final_decision,
@@ -554,7 +595,7 @@ def _execute_decision_actions(
     recommended_actions: list,
     escalation_summary: str,
 ) -> None:
-    if final_decision == "auto_approved" and transaction_id is not None:
+    if final_decision in ["auto_approved", "resolved_approved"] and transaction_id is not None:
         if category == "fraud":
             banking_tools.block_card(customer_id, f"Suspected fraud for disputed transaction {transaction_id}")
             banking_tools.initiate_refund(transaction_id, amount, "Fraud dispute approved")
