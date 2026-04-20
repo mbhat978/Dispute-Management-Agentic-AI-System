@@ -265,6 +265,8 @@ export default function TicketDetailPage() {
     setActionError(null);
     setActionSuccess(null);
     
+    const apiDecision = decision === "approve" ? "approved" : "rejected";
+    
     try {
       const response = await fetch(`http://localhost:8000/api/disputes/${ticketId}/resume`, {
         method: 'POST',
@@ -272,7 +274,7 @@ export default function TicketDetailPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          override_decision: decision
+          override_decision: apiDecision
         }),
       });
       

@@ -36,6 +36,9 @@ interface ProcessDisputeResponse {
   gathered_data: Record<string, unknown>;
   audit_trail: unknown[];
   message: string;
+  decision_reasoning?: {
+    justification?: string;
+  };
 }
 
 const API_BASE_URL = "http://localhost:8000";
@@ -832,6 +835,13 @@ export default function CustomerPortalPage() {
                   <span className="font-medium text-slate-900">AI category:</span> {formatDisputeCategory(decisionResult.dispute_category)}
                 </p>
               </div>
+              
+              {decisionResult.decision_reasoning?.justification && (
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+                  <p className="text-sm font-semibold text-blue-900 mb-1">AI Reasoning</p>
+                  <p className="text-sm text-blue-800 leading-relaxed">{decisionResult.decision_reasoning.justification}</p>
+                </div>
+              )}
 
               <Button
                 type="button"
