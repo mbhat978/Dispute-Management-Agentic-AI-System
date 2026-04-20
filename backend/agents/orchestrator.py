@@ -25,7 +25,7 @@ def human_review_node(state: DisputeState) -> Dict[str, Any]:
     The graph will interrupt before this node, allowing HITL intervention.
     """
     logger.info("[ORCHESTRATOR] Pausing at human_review_node")
-    return {}
+    return {"ticket_id": state.get("ticket_id")}
 
 
 def clarification_node(state: DisputeState) -> Dict[str, Any]:

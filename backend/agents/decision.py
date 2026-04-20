@@ -125,6 +125,13 @@ def decision_node(state: DisputeState) -> Dict[str, Any]:
                 escalation_reasons.append(rule_reason)
 
             justification = llm_reasoning.get("justification", "No justification provided.")
+            
+            # If the hardcoded safety rules overruled the LLM's proposed decision, update the justification
+            if final_decision != proposed_decision:
+                override_msg = f"System Compliance Override: The AI initially proposed '{proposed_decision}', but a strict business rule enforced '{final_decision}'. Reason: {rule_reason}"
+                justification = override_msg
+                llm_reasoning["justification"] = override_msg
+            
             analysis = llm_reasoning.get("analysis", "No analysis provided.")
             evidence_used = llm_reasoning.get("evidence_used", [])
             risk_factors = llm_reasoning.get("risk_factors", [])
@@ -586,9 +593,13 @@ def _validate_decision_against_rules(
         return "human_review_required", "Merchant disputes strictly require manual evidence review"
         
     if category == "refund_not_received":
-        refund_status = gathered_data.get("merchant_refund_status", {})
-        if "Pending" in refund_status.get("refund_status", ""):
+        refund_status = gathered_data.get("refund_status", {})
+        status_str = refund_status.get("refund_status", "") if isinstance(refund_status, dict) else ""
+        
+        if "Pending" in status_str:
             return "auto_rejected", "Refund is already pending at gateway. Customer must wait."
+        else:
+            return "human_review_required", "Merchant has not initiated refund. Requires manual review of return receipt."
             
     if category == "incorrect_amount":
         receipt_data = gathered_data.get("receipt_verification", {})
@@ -613,7 +624,10 @@ def _execute_decision_actions(
     if final_decision in ["auto_approved", "resolved_approved"] and transaction_id is not None:
         if category == "fraud":
             banking_tools.block_card(customer_id, f"Suspected fraud for disputed transaction {transaction_id}")
+            logger.info(f"[DECISION AGENT] Card blocked for customer {customer_id} due to fraud")
+
             banking_tools.initiate_refund(transaction_id, amount, "Fraud dispute approved")
+            logger.info(f"[DECISION AGENT] Full refund initiated: ${amount} for transaction {transaction_id}")
         elif category == "incorrect_amount":
             # Handle partial refund for incorrect amount disputes
             receipt_data = gathered_data.get("receipt_verification", {})
@@ -627,6 +641,7 @@ def _execute_decision_actions(
                 logger.warning(f"[DECISION AGENT] Partial amount not found, initiated full refund for transaction {transaction_id}")
         elif category in {"atm_failure", "duplicate", "failed_transaction"}:
             banking_tools.initiate_refund(transaction_id, amount, f"{category} dispute approved")
+            logger.info(f"[DECISION AGENT] Full refund initiated: ${amount} for {category} transaction {transaction_id}")
     elif final_decision == "human_review_required":
         banking_tools.route_to_human(ticket_id, escalation_summary)
 
