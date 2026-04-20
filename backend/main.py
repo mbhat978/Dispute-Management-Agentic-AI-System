@@ -996,8 +996,12 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
                                 break  # Exit the stream safely
                             continue  # Skip other non-dict states
                         
+                        # LangGraph streams deltas. Fetch the full current state to ensure no keys are missing.
+                        current_snapshot = await workflow.aget_state(config)
+                        full_state = current_snapshot.values if current_snapshot and hasattr(current_snapshot, 'values') else node_state
+                        
                         # Update database after triage node completes
-                        if node_name == "triage" and node_state.get("dispute_category"):
+                        if node_name == "triage" and full_state.get("dispute_category"):
                             try:
                                 # Ensure new_ticket is not None (it should be assigned before this point)
                                 if new_ticket is None:
@@ -1008,7 +1012,7 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
                                     models.DisputeTicket.id == new_ticket.id
                                 ).first()
                                 if ticket_to_update:
-                                    dispute_category = node_state.get("dispute_category")
+                                    dispute_category = full_state.get("dispute_category")
                                     if dispute_category:  # Only update if we have a valid category
                                         ticket_to_update.dispute_category = dispute_category  # type: ignore[assignment]
                                         db.commit()
@@ -1032,46 +1036,46 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
                         
                         # Get the latest audit entry to show what the agent is doing
                         latest_audit_entry = None
-                        if "audit_trail" in node_state and node_state["audit_trail"]:
-                            latest_audit_entry = node_state["audit_trail"][-1]
+                        if "audit_trail" in full_state and full_state["audit_trail"]:
+                            latest_audit_entry = full_state["audit_trail"][-1]
                             logger.info(f"[AGENT ACTIVITY] {latest_audit_entry}")
 
                         # Create detailed activity message
                         activity_details = []
-                        if "dispute_category" in node_state and node_state["dispute_category"]:
-                            activity_details.append(f"Category: {node_state['dispute_category']}")
+                        if "dispute_category" in full_state and full_state["dispute_category"]:
+                            activity_details.append(f"Category: {full_state['dispute_category']}")
                         
-                        if "triage_confidence" in node_state and node_state["triage_confidence"]:
-                            activity_details.append(f"Triage Confidence: {node_state['triage_confidence']:.2%}")
+                        if "triage_confidence" in full_state and full_state["triage_confidence"]:
+                            activity_details.append(f"Triage Confidence: {full_state['triage_confidence']:.2%}")
                         
-                        if "investigation_confidence" in node_state and node_state["investigation_confidence"]:
-                            activity_details.append(f"Investigation Confidence: {node_state['investigation_confidence']:.2%}")
+                        if "investigation_confidence" in full_state and full_state["investigation_confidence"]:
+                            activity_details.append(f"Investigation Confidence: {full_state['investigation_confidence']:.2%}")
                         
-                        if "decision_confidence" in node_state and node_state["decision_confidence"]:
-                            activity_details.append(f"Decision Confidence: {node_state['decision_confidence']:.2%}")
+                        if "decision_confidence" in full_state and full_state["decision_confidence"]:
+                            activity_details.append(f"Decision Confidence: {full_state['decision_confidence']:.2%}")
                         
-                        if "final_decision" in node_state and node_state["final_decision"]:
-                            activity_details.append(f"Decision: {node_state['final_decision'].upper()}")
+                        if "final_decision" in full_state and full_state["final_decision"]:
+                            activity_details.append(f"Decision: {full_state['final_decision'].upper()}")
                         
                         if activity_details:
                             logger.info(f"[AGENT STATUS] {' | '.join(activity_details)}")
 
                         # Prepare enhanced stream payload with agent information
                         stream_payload = {
-                            "ticket_id": node_state.get("ticket_id"),
+                            "ticket_id": new_ticket.id,
                             "node": node_name,
                             "agent_name": agent_display_name,
                             "message": latest_audit_entry or f"{agent_display_name} is processing the dispute",
                             "activity_summary": " | ".join(activity_details) if activity_details else None,
                             "state": {
-                                "dispute_category": node_state.get("dispute_category"),
-                                "final_decision": node_state.get("final_decision"),
-                                "triage_confidence": node_state.get("triage_confidence"),
-                                "investigation_confidence": node_state.get("investigation_confidence"),
-                                "decision_confidence": node_state.get("decision_confidence"),
-                                "audit_trail_count": len(node_state.get("audit_trail", [])),
-                                "gathered_data_keys": list(node_state.get("gathered_data", {}).keys()),
-                                "working_memory": node_state.get("working_memory", {}),
+                                "dispute_category": full_state.get("dispute_category"),
+                                "final_decision": full_state.get("final_decision"),
+                                "triage_confidence": full_state.get("triage_confidence"),
+                                "investigation_confidence": full_state.get("investigation_confidence"),
+                                "decision_confidence": full_state.get("decision_confidence"),
+                                "audit_trail_count": len(full_state.get("audit_trail", [])),
+                                "gathered_data_keys": list(full_state.get("gathered_data", {}).keys()),
+                                "working_memory": full_state.get("working_memory", {}),
                             },
                         }
                         broadcast_stream_event("agent_update", stream_payload)
@@ -1079,10 +1083,15 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
                         logger.info("-" * 80)
 
                         # Keep track of the latest state
-                        final_state = cast(DisputeState, node_state)
+                        final_state = cast(DisputeState, full_state)
+                
+                # One final fetch to guarantee final_state has everything
+                final_snapshot = await workflow.aget_state(config)
+                if final_snapshot and hasattr(final_snapshot, 'values'):
+                    final_state = cast(DisputeState, final_snapshot.values)
             
             # Check if workflow was interrupted (paused at checkpoint)
-            if final_state and not final_state.get("final_decision"):
+            if final_state and final_state.get("final_decision") == "human_review_required":
                 logger.info("[HITL] Workflow paused at interrupt point - awaiting human review")
                 broadcast_stream_event(
                     "workflow_paused",

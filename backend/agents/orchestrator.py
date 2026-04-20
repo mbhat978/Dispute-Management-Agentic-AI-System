@@ -19,6 +19,15 @@ from .config import (
 )
 
 
+def human_review_node(state: DisputeState) -> Dict[str, Any]:
+    """
+    Dummy node that pauses workflow for human review.
+    The graph will interrupt before this node, allowing HITL intervention.
+    """
+    logger.info("[ORCHESTRATOR] Pausing at human_review_node")
+    return {}
+
+
 def clarification_node(state: DisputeState) -> Dict[str, Any]:
     """
     Add clarification requests to working memory when triage confidence is low.
@@ -125,10 +134,10 @@ def route_after_investigation(state: DisputeState) -> Literal["re_investigate", 
     return "decision"
 
 
-def route_after_decision(state: DisputeState) -> Literal["investigator", "END"]:
+def route_after_decision(state: DisputeState) -> Literal["investigator", "human_review", "END"]:
     """
     Loop back to investigation only when a follow-up pass was explicitly requested
-    and iterations remain. Human-review outcomes are terminal.
+    and iterations remain. Route to human_review when decision requires human intervention.
     """
     confidence = state.get("decision_confidence", 0.0)
     iteration_count = state.get("iteration_count", 0)
@@ -137,8 +146,8 @@ def route_after_decision(state: DisputeState) -> Literal["investigator", "END"]:
     working_memory = state.get("working_memory", {})
 
     if final_decision == "human_review_required":
-        logger.success("[ORCHESTRATOR] route_after_decision -> END | final_decision=HUMAN_REVIEW_REQUIRED")
-        return "END"
+        logger.success("[ORCHESTRATOR] route_after_decision -> human_review | final_decision=HUMAN_REVIEW_REQUIRED")
+        return "human_review"
 
     if (
         working_memory.get("reinvestigation_requested", False)
@@ -181,6 +190,7 @@ def build_dispute_resolution_graph():
     workflow.add_node("investigator", investigator_node)
     workflow.add_node("re_investigate", re_investigate_node)
     workflow.add_node("decision", decision_node)
+    workflow.add_node("human_review", human_review_node)
 
     # Set entry point
     workflow.set_entry_point("triage")
@@ -217,13 +227,17 @@ def build_dispute_resolution_graph():
         route_after_decision,
         {
             "investigator": "investigator",
+            "human_review": "human_review",
             "END": END,
         }
     )
 
-    # Compile the graph with interrupt before decision node for HITL
+    # After human review, loop back to decision for final processing
+    workflow.add_edge("human_review", "decision")
+
+    # Compile the graph with interrupt before human_review node for HITL
     # Checkpointer will be attached at runtime via context manager
-    app = workflow.compile(interrupt_before=['decision'])
+    app = workflow.compile(interrupt_before=['human_review'])
 
     logger.success("[ORCHESTRATOR] Dispute resolution graph compiled successfully (checkpointer to be attached at runtime)")
     return app

@@ -265,6 +265,12 @@ AVAILABLE TOOLS:
    
 6. check_merchant_refund_status - Checks if merchant initiated refund
    Use when: Refund not received, need to verify merchant/gateway status
+   
+7. verify_receipt_amount - Verifies customer claimed receipt amount against the ledger
+   Use when: 'incorrect_amount' dispute. You MUST extract the customer's claimed/expected amount from their query and pass it as a float in 'claimed_amount' in the input.
+   
+8. initiate_chargeback - Initiates a chargeback with the card network
+   Use when: 'merchant_dispute'. Pass a summary of the issue as 'reason' in the input.
 
 INVESTIGATION STRATEGY:
 - Start with transaction_details if not already available
