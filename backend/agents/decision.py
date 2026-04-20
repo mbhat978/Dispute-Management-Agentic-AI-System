@@ -617,7 +617,7 @@ def _execute_decision_actions(
         elif category == "incorrect_amount":
             # Handle partial refund for incorrect amount disputes
             receipt_data = gathered_data.get("receipt_verification", {})
-            partial_amount = receipt_data.get("partial_amount")
+            partial_amount = receipt_data.get("discrepancy_amount")
             if partial_amount is not None and partial_amount > 0:
                 banking_tools.initiate_refund(transaction_id, partial_amount, "Incorrect amount partial refund")
                 logger.info(f"[DECISION AGENT] Partial refund initiated: ${partial_amount} for transaction {transaction_id}")

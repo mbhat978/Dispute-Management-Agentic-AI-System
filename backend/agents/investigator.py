@@ -393,6 +393,18 @@ def _rule_based_plan(
             "data_key": "refund_status",
             "input": {"transaction_id": transaction_id},
         })
+    elif category == "incorrect_amount":
+        plan.append({
+            "tool": "verify_receipt_amount",
+            "data_key": "receipt_verification",
+            "input": {"transaction_id": transaction_id, "claimed_amount": 0.0},
+        })
+    elif category == "merchant_dispute":
+        plan.append({
+            "tool": "initiate_chargeback",
+            "data_key": "chargeback_status",
+            "input": {"transaction_id": transaction_id, "reason": "merchant_dispute"},
+        })
 
     return plan
 
@@ -410,6 +422,8 @@ def _sanitize_plan(
         "check_duplicate_transactions": "duplicate_check",
         "get_loan_details": "loan_details",
         "check_merchant_refund_status": "refund_status",
+        "verify_receipt_amount": "receipt_verification",
+        "initiate_chargeback": "chargeback_status",
     }
 
     sanitized: List[Dict[str, Any]] = []
@@ -433,6 +447,10 @@ def _sanitize_plan(
             tool_input = {"transaction_id": transaction_id}
         elif tool_name == "check_duplicate_transactions":
             tool_input = {"customer_id": customer_id, "transaction_id": transaction_id}
+        elif tool_name == "verify_receipt_amount":
+            tool_input = {"transaction_id": transaction_id, "claimed_amount": tool_input.get("claimed_amount", 0.0)}
+        elif tool_name == "initiate_chargeback":
+            tool_input = {"transaction_id": transaction_id, "reason": tool_input.get("reason", "customer_dispute")}
 
         if data_key == "transaction_details" and "transaction_details" in prior_gathered_data:
             continue
@@ -475,6 +493,10 @@ def _execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
             date=trans_details.get("transaction_date", ""),
             time_window_hours=24
         )
+    if tool_name == "verify_receipt_amount":
+        return banking_tools.verify_receipt_amount(tool_input["transaction_id"], tool_input.get("claimed_amount", 0.0))
+    if tool_name == "initiate_chargeback":
+        return banking_tools.initiate_chargeback(tool_input["transaction_id"], tool_input.get("reason", "customer_dispute"))
     return {"error": f"Unsupported tool: {tool_name}"}
 
 
@@ -495,7 +517,8 @@ def _assess_evidence(
         "loan_dispute": {"transaction_details", "loan_details"},
         "refund_not_received": {"transaction_details", "refund_status"},
         "failed_transaction": {"transaction_details"},
-        "merchant_dispute": {"transaction_details"},
+        "incorrect_amount": {"transaction_details", "receipt_verification"},
+        "merchant_dispute": {"transaction_details", "chargeback_status"},
         "unknown": {"transaction_details"},
     }
 

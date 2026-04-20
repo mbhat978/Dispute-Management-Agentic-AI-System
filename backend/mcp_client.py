@@ -270,6 +270,40 @@ def query_compliance_policy(query: str) -> Dict[str, Any]:
     )
 
 
+def verify_receipt_amount(transaction_id: int, claimed_amount: float) -> Dict[str, Any]:
+    """
+    Verify a customer-uploaded receipt amount against the ledger.
+
+    Args:
+        transaction_id (int): The unique identifier of the transaction.
+        claimed_amount (float): The amount the customer claims they should have been charged.
+
+    Returns:
+        Dict[str, Any]: Receipt verification result including billed and claimed amounts.
+    """
+    return call_mcp_tool('verify_receipt_amount_tool', {
+        'transaction_id': transaction_id,
+        'claimed_amount': claimed_amount,
+    })
+
+
+def initiate_chargeback(transaction_id: int, reason: str) -> Dict[str, Any]:
+    """
+    Initiate a chargeback with the card network for merchant disputes.
+
+    Args:
+        transaction_id (int): The unique identifier of the transaction.
+        reason (str): The chargeback reason.
+
+    Returns:
+        Dict[str, Any]: Chargeback initiation result and status.
+    """
+    return call_mcp_tool('initiate_chargeback_tool', {
+        'transaction_id': transaction_id,
+        'reason': reason,
+    })
+
+
 # Helper function for agent introspection
 def get_available_tools() -> list:
     """
@@ -318,6 +352,14 @@ def get_available_tools() -> list:
         {
             "name": "query_compliance_policy",
             "description": "Query the compliance MCP server for the most relevant bank dispute policy paragraph"
+        },
+        {
+            "name": "verify_receipt_amount",
+            "description": "Verify customer-uploaded receipt amount against ledger for incorrect amount disputes"
+        },
+        {
+            "name": "initiate_chargeback",
+            "description": "Initiate a chargeback with the card network for merchant disputes"
         }
     ]
     return tools
