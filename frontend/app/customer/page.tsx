@@ -2,10 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, Brain, Building2, CheckCircle2, Landmark, Radio, Send, WifiOff } from "lucide-react";
+import { AlertCircle, Brain, Building2, CheckCircle2, Landmark, Radio, Send, WifiOff, Upload, X } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 interface Customer {
   id: number;
@@ -490,6 +492,91 @@ export default function CustomerPortalPage() {
   const [showDecisionModal, setShowDecisionModal] = useState(false);
   const [activeStreamTicketId, setActiveStreamTicketId] = useState<number | null>(null);
 
+  // New state for structured dispute form
+  const [disputeType, setDisputeType] = useState("");
+  const [loanAccountNumber, setLoanAccountNumber] = useState("");
+  const [emiAmount, setEmiAmount] = useState("");
+  const [atmLocation, setAtmLocation] = useState("");
+  const [atmWithdrawalAmount, setAtmWithdrawalAmount] = useState("");
+  const [merchantReceipt, setMerchantReceipt] = useState<File | null>(null);
+  const [expectedAmount, setExpectedAmount] = useState("");
+  const [chargedAmount, setChargedAmount] = useState("");
+  const [additionalDetails, setAdditionalDetails] = useState("");
+
+  // Suggestions based on dispute type
+  const getDescriptionSuggestions = (type: string): string[] => {
+    switch (type) {
+      case "fraud":
+        return [
+          "I did not authorize this transaction",
+          "My card was stolen and used without permission",
+          "I noticed unauthorized charges on my account",
+          "This transaction was made after I reported my card lost",
+          "I don't recognize this merchant or transaction"
+        ];
+      case "atm_failure":
+        return [
+          "ATM did not dispense cash but my account was debited",
+          "ATM showed error but money was deducted",
+          "Cash withdrawal failed but amount was charged",
+          "ATM malfunctioned during transaction",
+          "Partial cash dispensed but full amount debited"
+        ];
+      case "emi_issue":
+        return [
+          "EMI amount charged is incorrect",
+          "Double EMI deduction in the same month",
+          "EMI deducted after loan closure",
+          "Wrong EMI amount as per loan agreement",
+          "EMI not reflecting despite payment"
+        ];
+      case "incorrect_amount":
+        return [
+          "Charged amount is higher than the bill",
+          "Wrong amount debited from my account",
+          "Amount doesn't match the receipt",
+          "Overcharged for the purchase",
+          "Currency conversion rate is incorrect"
+        ];
+      case "merchant_dispute":
+        return [
+          "Goods not received as described",
+          "Service not provided as promised",
+          "Merchant refused to honor refund policy",
+          "Product is defective or damaged",
+          "Merchant charged wrong amount"
+        ];
+      case "duplicate":
+        return [
+          "Same transaction charged twice",
+          "Duplicate charge for single purchase",
+          "Multiple debits for one transaction",
+          "Charged twice at the same merchant",
+          "Duplicate EMI deduction"
+        ];
+      case "failed_transaction":
+        return [
+          "Transaction failed but amount was debited",
+          "Payment declined but money deducted",
+          "Transaction timeout but account charged",
+          "Failed online payment but amount debited",
+          "Transaction error but money taken"
+        ];
+      case "refund_not_received":
+        return [
+          "Refund not credited after return",
+          "Cancelled order but refund pending",
+          "Merchant promised refund but not received",
+          "Refund initiated but not reflected in account",
+          "Partial refund received instead of full amount"
+        ];
+      default:
+        return [];
+    }
+  };
+
+  const descriptionSuggestions = useMemo(() => getDescriptionSuggestions(disputeType), [disputeType]);
+
   useEffect(() => {
     async function fetchCustomers() {
       try {
@@ -551,12 +638,120 @@ export default function CustomerPortalPage() {
     [transactions, selectedTransactionId]
   );
 
+  // Build comprehensive query string from all form inputs
+  const buildComprehensiveQuery = (): string => {
+    let query = `Dispute Type: ${disputeType}\n\n`;
+    
+    // Add base description if provided
+    if (disputeReason.trim()) {
+      query += `Description: ${disputeReason.trim()}\n\n`;
+    }
+
+    // Add type-specific fields
+    switch (disputeType) {
+      case "fraud":
+        query += "Issue: Fraudulent/unauthorized transaction detected.\n";
+        if (additionalDetails.trim()) {
+          query += `Additional Details: ${additionalDetails.trim()}\n`;
+        }
+        break;
+      
+      case "atm_failure":
+        query += "Issue: ATM did not dispense cash but account was debited.\n";
+        if (atmLocation.trim()) {
+          query += `ATM Location: ${atmLocation.trim()}\n`;
+        }
+        if (atmWithdrawalAmount.trim()) {
+          query += `Withdrawal Amount: $${atmWithdrawalAmount.trim()}\n`;
+        }
+        if (additionalDetails.trim()) {
+          query += `Additional Details: ${additionalDetails.trim()}\n`;
+        }
+        break;
+      
+      case "emi_issue":
+        query += "Issue: EMI/Loan payment dispute.\n";
+        if (loanAccountNumber.trim()) {
+          query += `Loan Account Number: ${loanAccountNumber.trim()}\n`;
+        }
+        if (emiAmount.trim()) {
+          query += `EMI Amount: $${emiAmount.trim()}\n`;
+        }
+        if (additionalDetails.trim()) {
+          query += `Additional Details: ${additionalDetails.trim()}\n`;
+        }
+        break;
+      
+      case "incorrect_amount":
+        query += "Issue: Incorrect amount charged.\n";
+        if (expectedAmount.trim()) {
+          query += `Expected Amount: $${expectedAmount.trim()}\n`;
+        }
+        if (chargedAmount.trim()) {
+          query += `Charged Amount: $${chargedAmount.trim()}\n`;
+        }
+        if (merchantReceipt) {
+          query += `Merchant Receipt: ${merchantReceipt.name} (attached)\n`;
+        }
+        if (additionalDetails.trim()) {
+          query += `Additional Details: ${additionalDetails.trim()}\n`;
+        }
+        break;
+      
+      case "merchant_dispute":
+        query += "Issue: Dispute with merchant regarding goods/services.\n";
+        if (merchantReceipt) {
+          query += `Merchant Receipt: ${merchantReceipt.name} (attached)\n`;
+        }
+        if (additionalDetails.trim()) {
+          query += `Additional Details: ${additionalDetails.trim()}\n`;
+        }
+        break;
+      
+      case "duplicate":
+        query += "Issue: Duplicate charge detected.\n";
+        if (additionalDetails.trim()) {
+          query += `Additional Details: ${additionalDetails.trim()}\n`;
+        }
+        break;
+      
+      case "failed_transaction":
+        query += "Issue: Transaction failed but amount was debited.\n";
+        if (additionalDetails.trim()) {
+          query += `Additional Details: ${additionalDetails.trim()}\n`;
+        }
+        break;
+      
+      case "refund_not_received":
+        query += "Issue: Refund not received for returned goods/cancelled service.\n";
+        if (additionalDetails.trim()) {
+          query += `Additional Details: ${additionalDetails.trim()}\n`;
+        }
+        break;
+      
+      default:
+        if (additionalDetails.trim()) {
+          query += `Details: ${additionalDetails.trim()}\n`;
+        }
+    }
+
+    return query.trim();
+  };
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedCustomerId || !selectedTransactionId || !disputeReason.trim()) {
-      setError("Please select a customer, choose a transaction, and describe the issue.");
+    if (!selectedCustomerId || !selectedTransactionId || !disputeType) {
+      setError("Please select a customer, choose a transaction, and select a dispute type.");
       return;
     }
+    if (!disputeReason.trim()) {
+      setError("Please provide a brief description of the issue.");
+      return;
+    }
+    
+    // Build comprehensive query from all form fields
+    const comprehensiveQuery = buildComprehensiveQuery();
+    
     try {
       setSubmitLoading(true);
       setError(null);
@@ -571,7 +766,7 @@ export default function CustomerPortalPage() {
         body: JSON.stringify({
           transaction_id: Number(selectedTransactionId),
           customer_id: Number(selectedCustomerId),
-          customer_query: disputeReason.trim(),
+          customer_query: comprehensiveQuery,
         }),
       });
 
@@ -584,10 +779,21 @@ export default function CustomerPortalPage() {
       setActiveStreamTicketId(data.ticket_id);
       setDecisionResult(data);
       setShowDecisionModal(true);
+      
+      // Reset form
       setSelectedCustomerId("");
       setSelectedTransactionId("");
       setTransactions([]);
+      setDisputeType("");
       setDisputeReason("");
+      setLoanAccountNumber("");
+      setEmiAmount("");
+      setAtmLocation("");
+      setAtmWithdrawalAmount("");
+      setMerchantReceipt(null);
+      setExpectedAmount("");
+      setChargedAmount("");
+      setAdditionalDetails("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to submit dispute");
     } finally {
@@ -761,17 +967,213 @@ export default function CustomerPortalPage() {
                   )}
 
                   <div className="space-y-2">
-                    <label htmlFor="reason" className="text-sm font-medium text-slate-700">Dispute Reason</label>
-                    <textarea
-                      id="reason"
-                      value={disputeReason}
-                      onChange={(e) => setDisputeReason(e.target.value)}
-                      placeholder="Describe exactly what went wrong in natural language, for example: 'I didn't make this purchase' or 'The ATM didn't give me cash'."
-                      className="min-h-[160px] w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                    />
+                    <Label htmlFor="disputeType" className="text-sm font-medium text-slate-700">Dispute Type *</Label>
+                    <select
+                      id="disputeType"
+                      value={disputeType}
+                      onChange={(e) => {
+                        setDisputeType(e.target.value);
+                        // Reset type-specific fields when changing dispute type
+                        setLoanAccountNumber("");
+                        setEmiAmount("");
+                        setAtmLocation("");
+                        setAtmWithdrawalAmount("");
+                        setMerchantReceipt(null);
+                        setExpectedAmount("");
+                        setChargedAmount("");
+                      }}
+                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                      disabled={!selectedTransactionId}
+                    >
+                      <option value="">Select dispute type...</option>
+                      <option value="fraud">🚨 Fraudulent Transaction</option>
+                      <option value="atm_failure">🏧 ATM Failure (Cash Not Dispensed)</option>
+                      <option value="emi_issue">💳 EMI/Loan Issue</option>
+                      <option value="incorrect_amount">💰 Incorrect Amount Charged</option>
+                      <option value="merchant_dispute">🏪 Merchant Dispute</option>
+                      <option value="duplicate">📋 Duplicate Charge</option>
+                      <option value="failed_transaction">❌ Failed Transaction</option>
+                      <option value="refund_not_received">↩️ Refund Not Received</option>
+                    </select>
                   </div>
 
-                  <Button type="submit" disabled={submitLoading || !selectedCustomerId || !selectedTransactionId || !disputeReason.trim()} className="w-full bg-blue-900 hover:bg-blue-800">
+                  {/* Dynamic fields based on dispute type */}
+                  {disputeType === "emi_issue" && (
+                    <div className="space-y-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
+                      <h4 className="text-sm font-semibold text-slate-900">EMI/Loan Details</h4>
+                      <div className="space-y-2">
+                        <Label htmlFor="loanAccountNumber">Loan Account Number</Label>
+                        <Input
+                          id="loanAccountNumber"
+                          type="text"
+                          value={loanAccountNumber}
+                          onChange={(e) => setLoanAccountNumber(e.target.value)}
+                          placeholder="e.g., LOAN123456789"
+                          className="bg-white"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="emiAmount">EMI Amount</Label>
+                        <Input
+                          id="emiAmount"
+                          type="number"
+                          step="0.01"
+                          value={emiAmount}
+                          onChange={(e) => setEmiAmount(e.target.value)}
+                          placeholder="e.g., 500.00"
+                          className="bg-white"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {disputeType === "atm_failure" && (
+                    <div className="space-y-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
+                      <h4 className="text-sm font-semibold text-slate-900">ATM Transaction Details</h4>
+                      <div className="space-y-2">
+                        <Label htmlFor="atmLocation">ATM Location</Label>
+                        <Input
+                          id="atmLocation"
+                          type="text"
+                          value={atmLocation}
+                          onChange={(e) => setAtmLocation(e.target.value)}
+                          placeholder="e.g., Main Street Branch, Downtown"
+                          className="bg-white"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="atmWithdrawalAmount">Withdrawal Amount</Label>
+                        <Input
+                          id="atmWithdrawalAmount"
+                          type="number"
+                          step="0.01"
+                          value={atmWithdrawalAmount}
+                          onChange={(e) => setAtmWithdrawalAmount(e.target.value)}
+                          placeholder="e.g., 200.00"
+                          className="bg-white"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {(disputeType === "merchant_dispute" || disputeType === "incorrect_amount") && (
+                    <div className="space-y-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
+                      <h4 className="text-sm font-semibold text-slate-900">
+                        {disputeType === "incorrect_amount" ? "Amount Details" : "Merchant Details"}
+                      </h4>
+                      
+                      {disputeType === "incorrect_amount" && (
+                        <>
+                          <div className="space-y-2">
+                            <Label htmlFor="expectedAmount">Expected Amount</Label>
+                            <Input
+                              id="expectedAmount"
+                              type="number"
+                              step="0.01"
+                              value={expectedAmount}
+                              onChange={(e) => setExpectedAmount(e.target.value)}
+                              placeholder="e.g., 50.00"
+                              className="bg-white"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="chargedAmount">Charged Amount</Label>
+                            <Input
+                              id="chargedAmount"
+                              type="number"
+                              step="0.01"
+                              value={chargedAmount}
+                              onChange={(e) => setChargedAmount(e.target.value)}
+                              placeholder="e.g., 75.00"
+                              className="bg-white"
+                            />
+                          </div>
+                        </>
+                      )}
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="merchantReceipt">Merchant Receipt (Optional)</Label>
+                        <div className="flex items-center gap-2">
+                          <label
+                            htmlFor="merchantReceipt"
+                            className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 transition hover:bg-slate-50"
+                          >
+                            <Upload className="h-4 w-4" />
+                            {merchantReceipt ? "Change File" : "Upload Receipt"}
+                          </label>
+                          <input
+                            id="merchantReceipt"
+                            type="file"
+                            accept="image/*,.pdf"
+                            onChange={(e) => setMerchantReceipt(e.target.files?.[0] || null)}
+                            className="hidden"
+                          />
+                          {merchantReceipt && (
+                            <div className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm">
+                              <span className="text-slate-700">{merchantReceipt.name}</span>
+                              <button
+                                type="button"
+                                onClick={() => setMerchantReceipt(null)}
+                                className="text-red-600 hover:text-red-700"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {disputeType && (
+                    <>
+                      <div className="space-y-2">
+                        <Label htmlFor="reason" className="text-sm font-medium text-slate-700">
+                          Brief Description *
+                        </Label>
+                        <textarea
+                          id="reason"
+                          value={disputeReason}
+                          onChange={(e) => setDisputeReason(e.target.value)}
+                          placeholder="Provide a brief summary of the issue..."
+                          className="min-h-[100px] w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                          required
+                        />
+                        {descriptionSuggestions.length > 0 && !disputeReason.trim() && (
+                          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+                            <p className="mb-2 text-xs font-semibold text-slate-700">💡 Quick suggestions (click to use):</p>
+                            <div className="flex flex-wrap gap-2">
+                              {descriptionSuggestions.map((suggestion, index) => (
+                                <button
+                                  key={index}
+                                  type="button"
+                                  onClick={() => setDisputeReason(suggestion)}
+                                  className="rounded-md border border-blue-300 bg-white px-3 py-1.5 text-xs text-slate-700 transition hover:bg-blue-100 hover:border-blue-400"
+                                >
+                                  {suggestion}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="additionalDetails" className="text-sm font-medium text-slate-700">
+                          Additional Details (Optional)
+                        </Label>
+                        <textarea
+                          id="additionalDetails"
+                          value={additionalDetails}
+                          onChange={(e) => setAdditionalDetails(e.target.value)}
+                          placeholder="Any other relevant information..."
+                          className="min-h-[80px] w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  <Button type="submit" disabled={submitLoading || !selectedCustomerId || !selectedTransactionId || !disputeType || !disputeReason.trim()} className="w-full bg-blue-900 hover:bg-blue-800">
                     {submitLoading ? (
                       <>
                         <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
