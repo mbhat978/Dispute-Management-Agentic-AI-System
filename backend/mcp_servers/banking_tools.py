@@ -144,7 +144,7 @@ def get_customer_history(customer_id: int, limit: int = 5) -> Dict[str, Any]:
             "customer_id": customer.id,
             "customer_name": customer.name,
             "account_tier": customer.account_tier,
-            "average_monthly_balance": customer.average_monthly_balance,
+            "current_account_balance": customer.current_account_balance,
             "transaction_count": len(transaction_list),
             "transactions": transaction_list
         }
@@ -400,14 +400,13 @@ def initiate_refund(
     """
     Initiate a refund for a disputed transaction.
     
-    This is a dummy function that simulates initiating a refund. In a real
-    system, this would interact with payment processing systems to
-    reverse the transaction and credit the customer's account.
+    This function initiates a refund and updates the customer's current account
+    balance in real-time by adding the refund amount to their balance.
     
     Args:
         transaction_id (int): The unique identifier of the transaction to refund.
         amount (float): The amount to refund (can be partial or full).
-        reason (str, optional): The reason for the refund. 
+        reason (str, optional): The reason for the refund.
             Defaults to "Approved dispute".
         
     Returns:
@@ -450,7 +449,26 @@ def initiate_refund(
                 "message": f"Refund amount ${amount:.2f} exceeds transaction amount ${transaction_amount:.2f}"
             }
         
-        # Simulate initiating refund
+        # Get the customer and update their balance
+        customer = db.query(models.Customer).filter(
+            models.Customer.id == transaction.customer_id
+        ).first()
+        
+        if customer:
+            # Add refund amount to customer's current account balance
+            old_balance = cast(float, customer.current_account_balance)
+            new_balance = old_balance + amount
+            setattr(customer, "current_account_balance", new_balance)
+            db.commit()
+            db.refresh(customer)
+        else:
+            return {
+                "status": "error",
+                "transaction_id": transaction_id,
+                "message": f"Customer not found for transaction {transaction_id}. Cannot update balance."
+            }
+        
+        # Return success with updated balance information
         result = {
             "status": "success",
             "transaction_id": transaction_id,
@@ -459,9 +477,11 @@ def initiate_refund(
             "original_amount": transaction_amount,
             "refund_amount": amount,
             "reason": reason,
+            "old_balance": old_balance,
+            "new_balance": new_balance,
             "timestamp": datetime.utcnow().isoformat(),
             "estimated_processing_days": 3,
-            "message": f"Refund of ${amount:.2f} initiated successfully for transaction {transaction_id}. Estimated processing time: 3-5 business days."
+            "message": f"Refund of ${amount:.2f} initiated successfully for transaction {transaction_id}. Customer balance updated from ${old_balance:.2f} to ${new_balance:.2f}. Estimated processing time: 3-5 business days."
         }
         
         return result

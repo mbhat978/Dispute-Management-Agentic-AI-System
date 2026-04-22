@@ -30,7 +30,7 @@ class Customer(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
     account_tier = Column(String(50), nullable=False)  # e.g., 'Basic', 'Premium', 'Gold'
-    average_monthly_balance = Column(Float, nullable=False)
+    current_account_balance = Column(Float, nullable=False)
 
     # Relationships
     transactions = relationship("Transaction", back_populates="customer")

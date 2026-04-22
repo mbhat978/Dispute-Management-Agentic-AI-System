@@ -13,7 +13,7 @@ interface Customer {
   id: number;
   name: string;
   account_tier: string;
-  average_monthly_balance: number;
+  current_account_balance: number;
 }
 
 interface Transaction {
@@ -163,7 +163,13 @@ function getNodeBadgeClass(node: string): { className: string; label: string } {
   }
 }
 
-function LiveAiFeed({ activeTicketId }: { activeTicketId: number | null }) {
+function LiveAiFeed({
+  activeTicketId,
+  onProcessingCompleted
+}: {
+  activeTicketId: number | null;
+  onProcessingCompleted?: () => void;
+}) {
   const [events, setEvents] = useState<LiveFeedEvent[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<"idle" | "connecting" | "connected" | "disconnected">("idle");
   const feedContainerRef = useRef<HTMLDivElement>(null);
@@ -271,6 +277,12 @@ function LiveAiFeed({ activeTicketId }: { activeTicketId: number | null }) {
           eventSource?.addEventListener(eventType, (event) => {
             setConnectionStatus("connected");
             appendEvent(eventType, (event as MessageEvent).data);
+            
+            // Call the callback when processing completes successfully
+            if (eventType === "processing_completed" && onProcessingCompleted) {
+              console.log("[LiveAiFeed] Processing completed - triggering data refresh");
+              onProcessingCompleted();
+            }
           });
         };
 
@@ -580,54 +592,59 @@ export default function CustomerPortalPage() {
 
   const descriptionSuggestions = useMemo(() => getDescriptionSuggestions(disputeType), [disputeType]);
 
-  useEffect(() => {
-    async function fetchCustomers() {
-      try {
-        setCustomersLoading(true);
-        setError(null);
-        const response = await fetch(`${API_BASE_URL}/api/customers`);
-        if (!response.ok) {
-          const errorData: ApiErrorResponse = await response.json().catch(() => ({}));
-          throw new Error(getErrorMessage(errorData, `Failed to fetch customers: ${response.statusText}`));
-        }
-        const data = await response.json();
-        setCustomers(data.customers ?? []);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Unable to load customers");
-        console.error("Error fetching customers:", err);
-      } finally {
-        setCustomersLoading(false);
+  // Reusable function to fetch customers
+  const fetchCustomers = async () => {
+    try {
+      setCustomersLoading(true);
+      setError(null);
+      const response = await fetch(`${API_BASE_URL}/api/customers`);
+      if (!response.ok) {
+        const errorData: ApiErrorResponse = await response.json().catch(() => ({}));
+        throw new Error(getErrorMessage(errorData, `Failed to fetch customers: ${response.statusText}`));
       }
+      const data = await response.json();
+      setCustomers(data.customers ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load customers");
+      console.error("Error fetching customers:", err);
+    } finally {
+      setCustomersLoading(false);
     }
+  };
+
+  // Reusable function to fetch transactions
+  const fetchTransactions = async (customerId?: string) => {
+    const targetCustomerId = customerId ?? selectedCustomerId;
+    if (!targetCustomerId) {
+      setTransactions([]);
+      setSelectedTransactionId("");
+      return;
+    }
+    try {
+      setTransactionsLoading(true);
+      setError(null);
+      setSelectedTransactionId("");
+      const response = await fetch(`${API_BASE_URL}/api/customers/${targetCustomerId}/transactions`);
+      if (!response.ok) {
+        const errorData: ApiErrorResponse = await response.json().catch(() => ({}));
+        throw new Error(getErrorMessage(errorData, `Failed to fetch transactions: ${response.statusText}`));
+      }
+      const data = await response.json();
+      setTransactions(data.transactions ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load transactions");
+      setTransactions([]);
+      console.error("Error fetching transactions:", err);
+    } finally {
+      setTransactionsLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchCustomers();
   }, []);
 
   useEffect(() => {
-    async function fetchTransactions() {
-      if (!selectedCustomerId) {
-        setTransactions([]);
-        setSelectedTransactionId("");
-        return;
-      }
-      try {
-        setTransactionsLoading(true);
-        setError(null);
-        setSelectedTransactionId("");
-        const response = await fetch(`${API_BASE_URL}/api/customers/${selectedCustomerId}/transactions`);
-        if (!response.ok) {
-          const errorData: ApiErrorResponse = await response.json().catch(() => ({}));
-          throw new Error(getErrorMessage(errorData, `Failed to fetch transactions: ${response.statusText}`));
-        }
-        const data = await response.json();
-        setTransactions(data.transactions ?? []);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Unable to load transactions");
-        setTransactions([]);
-        console.error("Error fetching transactions:", err);
-      } finally {
-        setTransactionsLoading(false);
-      }
-    }
     fetchTransactions();
   }, [selectedCustomerId]);
 
@@ -1202,7 +1219,16 @@ export default function CustomerPortalPage() {
           </div>
 
           <div className="space-y-6">
-            <LiveAiFeed activeTicketId={activeStreamTicketId} />
+            <LiveAiFeed
+              activeTicketId={activeStreamTicketId}
+              onProcessingCompleted={() => {
+                console.log("[CustomerPortal] Refreshing customer and transaction data after dispute completion");
+                fetchCustomers();
+                if (selectedCustomerId) {
+                  fetchTransactions(selectedCustomerId);
+                }
+              }}
+            />
 
             {selectedCustomer && (
               <Card className="border-slate-200 shadow-sm">
@@ -1219,8 +1245,8 @@ export default function CustomerPortalPage() {
                     <Badge variant="outline" className="mt-1">{selectedCustomer.account_tier}</Badge>
                   </div>
                   <div>
-                    <p className="text-xs font-medium text-slate-500">Average Monthly Balance</p>
-                    <p className="text-sm font-semibold text-green-600">${selectedCustomer.average_monthly_balance.toLocaleString()}</p>
+                    <p className="text-xs font-medium text-slate-500">Current Account Balance</p>
+                    <p className="text-sm font-semibold text-green-600">${selectedCustomer.current_account_balance.toLocaleString()}</p>
                   </div>
                 </CardContent>
               </Card>

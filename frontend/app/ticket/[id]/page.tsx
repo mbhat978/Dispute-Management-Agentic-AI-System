@@ -13,7 +13,7 @@ interface Customer {
   id: number;
   name: string;
   account_tier: string;
-  average_monthly_balance: number;
+  current_account_balance: number;
 }
 
 interface Transaction {
@@ -378,9 +378,9 @@ export default function TicketDetailPage() {
                 <Badge variant="outline" className="mt-1">{customer.account_tier}</Badge>
               </div>
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Average Monthly Balance</p>
+                <p className="text-sm font-medium text-muted-foreground">Current Account Balance</p>
                 <p className="text-lg font-semibold text-green-600">
-                  ${customer.average_monthly_balance.toLocaleString()}
+                  ${customer.current_account_balance.toLocaleString()}
                 </p>
               </div>
             </CardContent>

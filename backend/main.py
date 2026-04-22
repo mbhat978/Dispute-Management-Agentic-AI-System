@@ -379,7 +379,7 @@ async def get_customers(db: Session = Depends(get_db)):
                     "id": customer.id,
                     "name": customer.name,
                     "account_tier": customer.account_tier,
-                    "average_monthly_balance": customer.average_monthly_balance,
+                    "current_account_balance": customer.current_account_balance,
                 }
                 for customer in customers
             ],
@@ -560,7 +560,7 @@ async def get_dispute_by_id(ticket_id: int, db: Session = Depends(get_db)):
                 "created_at": dispute.created_at.isoformat(),
                 "updated_at": dispute.updated_at.isoformat(),
             },
-            "customer": {"id": customer.id, "name": customer.name, "account_tier": customer.account_tier, "average_monthly_balance": customer.average_monthly_balance} if customer else {},
+            "customer": {"id": customer.id, "name": customer.name, "account_tier": customer.account_tier, "current_account_balance": customer.current_account_balance} if customer else {},
             "transaction": {"id": transaction.id, "amount": transaction.amount, "merchant_name": transaction.merchant_name, "transaction_date": transaction.transaction_date.isoformat(), "status": transaction.status, "is_international": transaction.is_international} if transaction else {},
             "audit_logs": formatted_logs,
             "investigation_evidence": investigation_evidence

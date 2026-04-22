@@ -41,27 +41,27 @@ def create_customers(db: Session):
         models.Customer(
             name="John Smith",
             account_tier="Premium",
-            average_monthly_balance=15000.00
+            current_account_balance=15000.00
         ),
         models.Customer(
             name="Sarah Johnson",
             account_tier="Gold",
-            average_monthly_balance=50000.00
+            current_account_balance=50000.00
         ),
         models.Customer(
             name="Michael Chen",
             account_tier="Basic",
-            average_monthly_balance=3500.00
+            current_account_balance=3500.00
         ),
         models.Customer(
             name="Emily Rodriguez",
             account_tier="Premium",
-            average_monthly_balance=22000.00
+            current_account_balance=22000.00
         ),
         models.Customer(
             name="David Kumar",
             account_tier="Basic",
-            average_monthly_balance=5000.00
+            current_account_balance=5000.00
         )
     ]
     
