@@ -23,6 +23,7 @@ interface Transaction {
   transaction_date: string;
   status: string;
   is_international: boolean;
+  transaction_type?: string;
 }
 
 interface AuditLog {

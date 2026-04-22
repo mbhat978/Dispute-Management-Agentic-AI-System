@@ -433,6 +433,7 @@ async def get_customer_transactions(customer_id: int, db: Session = Depends(get_
                     "transaction_date": transaction.transaction_date.isoformat(),
                     "status": transaction.status,
                     "is_international": transaction.is_international,
+                    "transaction_type": getattr(transaction, "transaction_type", "debit"),
                 }
                 for transaction in transactions
             ],

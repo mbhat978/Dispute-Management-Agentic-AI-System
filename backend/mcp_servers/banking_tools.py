@@ -153,7 +153,8 @@ def get_customer_history(customer_id: int, limit: int = 5) -> Dict[str, Any]:
                 "merchant_name": trans.merchant_name,
                 "transaction_date": trans.transaction_date.isoformat(),
                 "status": trans.status,
-                "is_international": trans.is_international
+                "is_international": trans.is_international,
+                "transaction_type": getattr(trans, "transaction_type", "debit")
             })
         
         result = {

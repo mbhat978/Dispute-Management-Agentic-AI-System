@@ -24,6 +24,7 @@ interface Transaction {
   transaction_date: string;
   status: string;
   is_international: boolean;
+  transaction_type?: string;
 }
 
 interface ProcessDisputeResponse {
@@ -979,8 +980,20 @@ export default function CustomerPortalPage() {
                               onClick={() => setSelectedTransactionId(String(t.id))}
                               className={`flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left transition ${isSelected ? "border-blue-600 bg-blue-50 shadow-sm" : "border-slate-200 bg-white hover:border-slate-300"}`}
                             >
-                              <div>
-                                <p className="text-sm font-semibold text-slate-900">{t.merchant_name}</p>
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <p className="text-sm font-semibold text-slate-900">{t.merchant_name}</p>
+                                  <Badge
+                                    variant="outline"
+                                    className={
+                                      t.transaction_type === 'credit'
+                                        ? 'bg-green-50 text-green-700 border-green-200 text-xs'
+                                        : 'bg-slate-50 text-slate-700 border-slate-200 text-xs'
+                                    }
+                                  >
+                                    {(t.transaction_type || 'debit').toUpperCase()}
+                                  </Badge>
+                                </div>
                                 <p className="text-xs text-slate-500">
                                   {new Date(t.transaction_date).toLocaleString()} · {t.status}{t.is_international ? " · International" : ""}
                                 </p>
