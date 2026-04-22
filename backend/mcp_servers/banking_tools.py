@@ -66,6 +66,11 @@ def get_transaction_details(transaction_id: int) -> Dict[str, Any]:
             models.Customer.id == transaction.customer_id
         ).first()
         
+        # Query past disputes for this transaction
+        past_tickets = db.query(models.DisputeTicket).filter(
+            models.DisputeTicket.transaction_id == transaction_id
+        ).all()
+        
         result = {
             "transaction_id": transaction.id,
             "customer_id": transaction.customer_id,
@@ -75,7 +80,18 @@ def get_transaction_details(transaction_id: int) -> Dict[str, Any]:
             "merchant_name": transaction.merchant_name,
             "transaction_date": transaction.transaction_date.isoformat(),
             "status": transaction.status,
-            "is_international": transaction.is_international
+            "is_international": transaction.is_international,
+            "refunded_amount": transaction.refunded_amount,
+            "transaction_type": transaction.transaction_type,
+            "past_disputes": [
+                {
+                    "ticket_id": t.id,
+                    "status": t.status,
+                    "category": t.dispute_category,
+                    "created_at": t.created_at.isoformat()
+                }
+                for t in past_tickets
+            ]
         }
         
         return result
@@ -438,15 +454,22 @@ def initiate_refund(
                 "message": f"Transaction ID {transaction_id} not found. Cannot initiate refund."
             }
         
-        # Validate refund amount
-        transaction_amount = cast(float, transaction.amount)
-        if amount > transaction_amount:
+        # CRITICAL SECURITY CHECK: Block refunds on credit/deposit transactions
+        if getattr(transaction, "transaction_type", "debit") == "credit":
             return {
                 "status": "error",
                 "transaction_id": transaction_id,
-                "transaction_amount": transaction_amount,
-                "requested_refund": amount,
-                "message": f"Refund amount ${amount:.2f} exceeds transaction amount ${transaction_amount:.2f}"
+                "message": f"CRITICAL ERROR: Cannot issue a refund for a credit/deposit transaction."
+            }
+        
+        # Validate refund amount - prevent double-dipping
+        transaction_amount = cast(float, transaction.amount)
+        refunded_already = cast(float, getattr(transaction, "refunded_amount", 0.0))
+        if amount + refunded_already > transaction_amount:
+            return {
+                "status": "error",
+                "transaction_id": transaction_id,
+                "message": f"Cannot refund ${amount:.2f}. Transaction of ${transaction_amount:.2f} already has ${refunded_already:.2f} refunded."
             }
         
         # Get the customer and update their balance
@@ -459,8 +482,25 @@ def initiate_refund(
             old_balance = cast(float, customer.current_account_balance)
             new_balance = old_balance + amount
             setattr(customer, "current_account_balance", new_balance)
+            
+            # Update the transaction's refunded amount
+            setattr(transaction, "refunded_amount", refunded_already + amount)
+            
+            # Create refund ledger record
+            refund_tx = models.Transaction(
+                customer_id=transaction.customer_id,
+                amount=amount,
+                merchant_name=f"REFUND - {transaction.merchant_name}",
+                status="success",
+                is_international=False,
+                refunded_amount=0.0,
+                transaction_type="credit"
+            )
+            db.add(refund_tx)
+            
             db.commit()
             db.refresh(customer)
+            db.refresh(transaction)
         else:
             return {
                 "status": "error",
@@ -476,12 +516,13 @@ def initiate_refund(
             "merchant_name": transaction.merchant_name,
             "original_amount": transaction_amount,
             "refund_amount": amount,
+            "total_refunded": refunded_already + amount,
             "reason": reason,
             "old_balance": old_balance,
             "new_balance": new_balance,
             "timestamp": datetime.utcnow().isoformat(),
             "estimated_processing_days": 3,
-            "message": f"Refund of ${amount:.2f} initiated successfully for transaction {transaction_id}. Customer balance updated from ${old_balance:.2f} to ${new_balance:.2f}. Estimated processing time: 3-5 business days."
+            "message": f"Refund of ${amount:.2f} initiated successfully for transaction {transaction_id}. Customer balance updated from ${old_balance:.2f} to ${new_balance:.2f}. Total refunded: ${refunded_already + amount:.2f}. Estimated processing time: 3-5 business days."
         }
         
         return result

@@ -438,7 +438,7 @@ def _sanitize_plan(
         if tool_name not in allowed:
             continue
 
-        data_key = step.get("data_key") or allowed[tool_name]
+        data_key = allowed[tool_name]  # Force strict internal keys, ignore LLM
         tool_input = step.get("input", {})
 
         if tool_name == "get_transaction_details":

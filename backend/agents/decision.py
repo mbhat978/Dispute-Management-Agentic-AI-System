@@ -126,11 +126,17 @@ def decision_node(state: DisputeState) -> Dict[str, Any]:
 
             justification = llm_reasoning.get("justification", "No justification provided.")
             
-            # If the hardcoded safety rules overruled the LLM's proposed decision, update the justification
-            if final_decision != proposed_decision:
-                override_msg = f"System Compliance Override: The AI initially proposed '{proposed_decision}', but a strict business rule enforced '{final_decision}'. Reason: {rule_reason}"
-                justification = override_msg
-                llm_reasoning["justification"] = override_msg
+            # If a strict business rule was triggered, ensure it is communicated
+            if rule_reason:
+                if final_decision != proposed_decision:
+                    override_msg = f"System Compliance Override: The AI initially proposed '{proposed_decision}', but a strict business rule enforced '{final_decision}'. Reason: {rule_reason}"
+                    justification = override_msg
+                    llm_reasoning["justification"] = override_msg
+                else:
+                    # Even if they agree on the decision, append the official rule reason
+                    override_msg = f"{justification}\n\nSystem Compliance Enforcement: {rule_reason}"
+                    justification = override_msg
+                    llm_reasoning["justification"] = override_msg
             
             analysis = llm_reasoning.get("analysis", "No analysis provided.")
             evidence_used = llm_reasoning.get("evidence_used", [])
@@ -549,6 +555,11 @@ def _validate_decision_against_rules(
     confidence: float,
     customer_tier: str,
 ) -> Tuple[str, str]:
+    # CRITICAL SECURITY: Prevent disputes on incoming deposits
+    trans_details = gathered_data.get("transaction_details", {})
+    if trans_details.get("transaction_type") == "credit":
+        return "auto_rejected", "Standard disputes cannot be filed for credit/deposit transactions."
+    
     should_escalate, reason = should_escalate_to_human(
         category=category,
         amount=amount,
@@ -557,6 +568,14 @@ def _validate_decision_against_rules(
     )
     if should_escalate:
         return "human_review_required", reason
+
+    # Prevent Double-Dipping
+    trans_details = gathered_data.get("transaction_details", {})
+    refunded_amount = trans_details.get("refunded_amount", 0.0)
+    original_amount = trans_details.get("amount", 0.0)
+    
+    if refunded_amount > 0 and refunded_amount >= original_amount:
+        return "auto_rejected", f"Double-dip prevented. Transaction has already been fully refunded (${refunded_amount})."
 
     if category == "atm_failure":
         atm_logs = gathered_data.get("atm_logs", {})

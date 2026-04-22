@@ -123,7 +123,9 @@ def create_scenario_transactions(db: Session, customers):
         merchant_name="Luxury Watches International",
         transaction_date=base_time + timedelta(hours=2),
         status="success",
-        is_international=True
+        is_international=True,
+        refunded_amount=0.0,
+        transaction_type="debit"
     )
     db.add(trans1)
     db.commit()
@@ -139,7 +141,9 @@ def create_scenario_transactions(db: Session, customers):
         merchant_name="Electronics Store",
         transaction_date=base_time + timedelta(days=1, hours=5),
         status="failed",
-        is_international=False
+        is_international=False,
+        refunded_amount=0.0,
+        transaction_type="debit"
     )
     db.add(trans2)
     db.commit()
@@ -155,7 +159,9 @@ def create_scenario_transactions(db: Session, customers):
         merchant_name="TechGadgets Online",
         transaction_date=base_time + timedelta(days=2, hours=10),
         status="success",
-        is_international=False
+        is_international=False,
+        refunded_amount=0.0,
+        transaction_type="debit"
     )
     db.add(trans3)
     db.commit()
@@ -173,7 +179,9 @@ def create_scenario_transactions(db: Session, customers):
         merchant_name="Coffee Shop Downtown",
         transaction_date=duplicate_time,
         status="success",
-        is_international=False
+        is_international=False,
+        refunded_amount=0.0,
+        transaction_type="debit"
     )
     db.add(trans4a)
     db.commit()
@@ -186,7 +194,9 @@ def create_scenario_transactions(db: Session, customers):
         merchant_name="Coffee Shop Downtown",
         transaction_date=duplicate_time + timedelta(minutes=3),
         status="success",
-        is_international=False
+        is_international=False,
+        refunded_amount=0.0,
+        transaction_type="debit"
     )
     db.add(trans4b)
     db.commit()
@@ -204,7 +214,9 @@ def create_scenario_transactions(db: Session, customers):
         merchant_name="ATM Withdrawal",
         transaction_date=base_time + timedelta(days=4, hours=9),
         status="failed",
-        is_international=False
+        is_international=False,
+        refunded_amount=0.0,
+        transaction_type="debit"
     )
     db.add(trans5)
     db.commit()
@@ -231,7 +243,9 @@ def create_scenario_transactions(db: Session, customers):
         merchant_name="ATM Withdrawal",
         transaction_date=base_time + timedelta(days=5, hours=11),
         status="success",
-        is_international=False
+        is_international=False,
+        refunded_amount=0.0,
+        transaction_type="debit"
     )
     db.add(trans6)
     db.commit()
@@ -246,6 +260,24 @@ def create_scenario_transactions(db: Session, customers):
     db.add(atm_log_success)
     db.commit()
     print(f"    ✓ Transaction ID: {trans6.id} - ${trans6.amount} ATM Withdrawal (SUCCESS)")
+    
+    # Scenario 6: Salary deposit (credit transaction) - CANNOT BE DISPUTED
+    print("\n  Scenario 6: Salary deposit (credit transaction)")
+    trans7 = models.Transaction(
+        customer_id=customers[0].id,  # John Smith (Premium tier)
+        amount=5000.00,
+        merchant_name="Payroll Deposit",
+        transaction_date=base_time + timedelta(days=6, hours=8),
+        status="success",
+        is_international=False,
+        refunded_amount=0.0,
+        transaction_type="credit"
+    )
+    db.add(trans7)
+    db.commit()
+    db.refresh(trans7)
+    transactions.append(trans7)
+    print(f"    ✓ Transaction ID: {trans7.id} - ${trans7.amount} Payroll Deposit (CREDIT)")
     
     return transactions
 

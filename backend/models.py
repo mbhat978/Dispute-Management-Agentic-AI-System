@@ -51,6 +51,8 @@ class Transaction(Base):
     transaction_date = Column(DateTime, default=datetime.utcnow, nullable=False)
     status = Column(String(50), nullable=False)  # 'success', 'failed', 'pending'
     is_international = Column(Boolean, default=False, nullable=False)
+    refunded_amount = Column(Float, default=0.0, nullable=False)
+    transaction_type = Column(String(10), default="debit", nullable=False)  # 'debit' or 'credit'
 
     # Relationships
     customer = relationship("Customer", back_populates="transactions")
