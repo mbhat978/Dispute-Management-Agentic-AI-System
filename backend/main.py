@@ -450,6 +450,68 @@ async def get_customer_transactions(customer_id: int, db: Session = Depends(get_
         )
 
 
+@app.get("/api/customers/{customer_id}/disputes")
+async def get_customer_disputes(customer_id: int, db: Session = Depends(get_db)):
+    """
+    Return all disputes for a specific customer ordered by newest first.
+    """
+    try:
+        customer = db.query(models.Customer).filter(
+            models.Customer.id == customer_id
+        ).first()
+
+        if not customer:
+            raise_api_error(
+                404,
+                f"Customer with ID {customer_id} not found.",
+                code="CUSTOMER_NOT_FOUND",
+                details={"customer_id": customer_id},
+            )
+
+        disputes = db.query(models.DisputeTicket).filter(
+            models.DisputeTicket.customer_id == customer_id
+        ).order_by(models.DisputeTicket.created_at.desc()).all()
+
+        dispute_payload = []
+        for dispute in disputes:
+            audit_logs = db.query(models.AuditLog).filter(
+                models.AuditLog.ticket_id == dispute.id
+            ).order_by(models.AuditLog.timestamp.asc()).all()
+
+            audit_trail = [
+                {
+                    "id": log.id,
+                    "agent_name": log.agent_name,
+                    "action_type": log.action_type,
+                    "description": log.description,
+                    "timestamp": log.timestamp.isoformat()
+                }
+                for log in audit_logs
+            ]
+
+            dispute_payload.append({
+                "ticket_id": dispute.id,
+                "status": dispute.status,
+                "dispute_category": dispute.dispute_category,
+                "final_decision": dispute.status,
+                "decision_reasoning": dispute.resolution_notes,
+                "created_at": dispute.created_at.isoformat(),
+                "audit_trail": audit_trail
+            })
+
+        return {"disputes": dispute_payload}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error fetching customer disputes: {}", str(e))
+        raise_api_error(
+            500,
+            "Unable to load customer disputes.",
+            code="CUSTOMER_DISPUTES_FETCH_FAILED",
+            details={"customer_id": customer_id, "reason": str(e)},
+        )
+
+
 @app.get("/api/disputes")
 async def get_all_disputes(db: Session = Depends(get_db)):
     """
@@ -1303,6 +1365,10 @@ async def resume_dispute(
                 async for chunk in workflow.astream(None, config):  # type: ignore[arg-type]
                     for node_name, node_state in chunk.items():
                         logger.info(f"[RESUME] Processing node: {node_name}")
+                        
+                        # Safely skip non-dictionary states (e.g., __interrupt__ tuples)
+                        if not isinstance(node_state, dict):
+                            continue
                         
                         broadcast_stream_event(
                             "agent_update",

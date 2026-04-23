@@ -91,6 +91,8 @@ class DisputeTicket(Base):
         nullable=False,
         default='open'
     )  # 'open', 'under_investigation', 'auto_approved', 'auto_rejected', 'human_review_required', 'pending_review'
+    final_decision = Column(String(100), nullable=True)  # Final decision made by Decision Agent
+    decision_reasoning = Column(Text, nullable=True)  # JSON string containing decision reasoning
     resolution_notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, Brain, Building2, CheckCircle2, Landmark, Radio, Send, WifiOff, Upload, X } from "lucide-react";
+import { AlertCircle, Brain, Building2, CheckCircle2, ChevronDown, ChevronUp, Landmark, Radio, Send, WifiOff, Upload, X } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +40,16 @@ interface ProcessDisputeResponse {
   decision_reasoning?: {
     justification?: string;
   };
+}
+
+interface PastDispute {
+  ticket_id: number;
+  status: string;
+  dispute_category: string;
+  final_decision: string;
+  created_at?: string;
+  decision_reasoning?: any;
+  audit_trail?: any[];
 }
 
 const API_BASE_URL = "http://localhost:8000";
@@ -190,6 +200,7 @@ function LiveAiFeed({
   }, [events]);
 
   useEffect(() => {
+    setEvents([]); // Clear the feed history for the new dispute
     setConnectionStatus("connecting");
     console.log("[LiveAiFeed] Connecting to SSE stream...");
 
@@ -280,7 +291,7 @@ function LiveAiFeed({
             appendEvent(eventType, (event as MessageEvent).data);
             
             // Call the callback when processing completes successfully
-            if (eventType === "processing_completed" && onProcessingCompleted) {
+            if ((eventType === "processing_completed" || eventType === "resume_completed") && onProcessingCompleted) {
               console.log("[LiveAiFeed] Processing completed - triggering data refresh");
               onProcessingCompleted();
             }
@@ -292,6 +303,8 @@ function LiveAiFeed({
         registerEventType("agent_update");
         registerEventType("processing_completed");
         registerEventType("processing_failed");
+        registerEventType("resume_started");
+        registerEventType("resume_completed");
         registerEventType("heartbeat");
 
         eventSource.onopen = () => {
@@ -519,6 +532,11 @@ export default function CustomerPortalPage() {
   const [chargedAmount, setChargedAmount] = useState("");
   const [additionalDetails, setAdditionalDetails] = useState("");
 
+  // State for past disputes
+  const [pastDisputes, setPastDisputes] = useState<PastDispute[]>([]);
+  const [pastDisputesLoading, setPastDisputesLoading] = useState(false);
+  const [expandedDisputeId, setExpandedDisputeId] = useState<number | null>(null);
+
   // Suggestions based on dispute type
   const getDescriptionSuggestions = (type: string): string[] => {
     switch (type) {
@@ -641,12 +659,39 @@ export default function CustomerPortalPage() {
     }
   };
 
+  // Fetch past disputes for a customer
+  const fetchPastDisputes = async (customerId: string) => {
+    if (!customerId) {
+      setPastDisputes([]);
+      return;
+    }
+
+    setPastDisputesLoading(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/customers/${customerId}/disputes`);
+      if (!response.ok) {
+        throw new Error("Failed to fetch past disputes");
+      }
+      const data = await response.json();
+      setPastDisputes(data.disputes || []);
+    } catch (err) {
+      console.error("Error fetching past disputes:", err);
+      setPastDisputes([]);
+    } finally {
+      setPastDisputesLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchCustomers();
   }, []);
 
   useEffect(() => {
     fetchTransactions();
+    if (selectedCustomerId) {
+      fetchPastDisputes(selectedCustomerId);
+    }
   }, [selectedCustomerId]);
 
   const selectedCustomer = useMemo(
@@ -778,6 +823,7 @@ export default function CustomerPortalPage() {
       setError(null);
       setDecisionResult(null);
       setShowDecisionModal(false);
+      setActiveStreamTicketId(null); // Reset to allow the feed to listen to the new dispute
 
       const response = await fetch(`${API_BASE_URL}/api/disputes/process`, {
         method: "POST",
@@ -866,7 +912,7 @@ export default function CustomerPortalPage() {
                 className="w-full bg-blue-900 hover:bg-blue-800"
                 onClick={() => setShowDecisionModal(false)}
               >
-                Close
+                Close & View History
               </Button>
             </div>
           </div>
@@ -1239,6 +1285,7 @@ export default function CustomerPortalPage() {
                 fetchCustomers();
                 if (selectedCustomerId) {
                   fetchTransactions(selectedCustomerId);
+                  fetchPastDisputes(selectedCustomerId);
                 }
               }}
             />
@@ -1289,6 +1336,95 @@ export default function CustomerPortalPage() {
                   </div>
                   {selectedTransaction.is_international && (
                     <Badge variant="secondary" className="bg-blue-100 text-blue-700">🌍 International Transaction</Badge>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {selectedCustomerId && (
+              <Card className="border-slate-200 shadow-sm">
+                <CardHeader>
+                  <CardTitle className="text-slate-900">Dispute History</CardTitle>
+                  <CardDescription>View your past disputes and AI activity</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {pastDisputesLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-900 border-t-transparent" />
+                    </div>
+                  ) : pastDisputes.length === 0 ? (
+                    <p className="text-sm text-slate-500 py-4">No past disputes found.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {pastDisputes.map((dispute) => (
+                        <div key={dispute.ticket_id} className="border border-slate-200 rounded-lg overflow-hidden">
+                          <button
+                            onClick={() => setExpandedDisputeId(expandedDisputeId === dispute.ticket_id ? null : dispute.ticket_id)}
+                            className="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100 transition flex items-center justify-between"
+                          >
+                            <div className="flex items-center gap-3 text-left">
+                              <div>
+                                <p className="text-sm font-semibold text-slate-900">Ticket #{dispute.ticket_id}</p>
+                                <p className="text-xs text-slate-500">
+                                  {dispute.created_at ? new Date(dispute.created_at).toLocaleDateString() : 'N/A'}
+                                </p>
+                              </div>
+                              <Badge variant="outline" className="text-xs">
+                                {formatDisputeCategory(dispute.dispute_category)}
+                              </Badge>
+                              <Badge
+                                className={
+                                  dispute.final_decision === "auto_approved"
+                                    ? "bg-green-100 text-green-800 hover:bg-green-100"
+                                    : dispute.final_decision === "auto_rejected"
+                                    ? "bg-red-100 text-red-800 hover:bg-red-100"
+                                    : "bg-yellow-100 text-yellow-800 hover:bg-yellow-100"
+                                }
+                              >
+                                {dispute.final_decision === "auto_approved"
+                                  ? "Approved"
+                                  : dispute.final_decision === "auto_rejected"
+                                  ? "Rejected"
+                                  : "Under Review"}
+                              </Badge>
+                            </div>
+                            {expandedDisputeId === dispute.ticket_id ? (
+                              <ChevronUp className="h-4 w-4 text-slate-500" />
+                            ) : (
+                              <ChevronDown className="h-4 w-4 text-slate-500" />
+                            )}
+                          </button>
+                          
+                          {expandedDisputeId === dispute.ticket_id && (
+                            <div className="p-4 bg-slate-50 border-t border-slate-200">
+                              <div className="mb-4">
+                                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">AI Reasoning</p>
+                                <p className="text-sm text-slate-700 bg-white p-3 rounded border border-slate-200">
+                                  {typeof dispute.decision_reasoning === 'object' ? dispute.decision_reasoning?.justification : dispute.decision_reasoning || "No reasoning provided."}
+                                </p>
+                              </div>
+                              
+                              <div>
+                                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Audit Trail</p>
+                                <div className="bg-white p-3 rounded border border-slate-200 max-h-60 overflow-y-auto space-y-2">
+                                  {dispute.audit_trail && dispute.audit_trail.map((log: any, idx: number) => {
+                                    const isObj = typeof log === 'object' && log !== null;
+                                    const key = isObj && log.id ? log.id : idx;
+                                    const text = isObj ? log.description : log;
+                                    const agent = isObj && log.agent_name ? `[${log.agent_name}] ` : '';
+                                    return (
+                                      <div key={key} className="text-xs text-slate-600 border-b border-slate-100 pb-2 last:border-0 last:pb-0">
+                                        <span className="font-medium text-slate-800">{agent}</span>{text}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </CardContent>
               </Card>

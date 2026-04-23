@@ -195,6 +195,12 @@ RULE VALIDATION:
 
         if ticket:
             ticket.status = final_decision  # type: ignore[assignment]
+            if hasattr(ticket, 'final_decision'):
+                ticket.final_decision = final_decision  # type: ignore[assignment]
+            if hasattr(ticket, 'decision_reasoning'):
+                ticket.decision_reasoning = json.dumps({"justification": justification})  # type: ignore[assignment]
+            if hasattr(ticket, 'dispute_category'):
+                ticket.dispute_category = category  # type: ignore[assignment]
             ticket.resolution_notes = justification  # type: ignore[assignment]
             ticket.updated_at = datetime.utcnow()  # type: ignore[assignment]
             db.commit()

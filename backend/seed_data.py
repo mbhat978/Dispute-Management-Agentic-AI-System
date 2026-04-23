@@ -293,7 +293,10 @@ def create_dispute_tickets(db: Session, transactions):
         transaction_id=transactions[0].id,
         customer_id=transactions[0].customer_id,
         dispute_reason="I did not authorize this high-value international transaction. I was not traveling abroad and did not make this purchase.",
+        dispute_category=None,  # Will be set by Triage Agent
         status="open",
+        final_decision=None,
+        decision_reasoning=None,
         resolution_notes=None
     )
     db.add(dispute1)
@@ -304,7 +307,10 @@ def create_dispute_tickets(db: Session, transactions):
         transaction_id=transactions[1].id,
         customer_id=transactions[1].customer_id,
         dispute_reason="Transaction shows as failed but the money was still deducted from my account. I never received the goods.",
+        dispute_category=None,  # Will be set by Triage Agent
         status="open",
+        final_decision=None,
+        decision_reasoning=None,
         resolution_notes=None
     )
     db.add(dispute2)
@@ -315,7 +321,10 @@ def create_dispute_tickets(db: Session, transactions):
         transaction_id=transactions[2].id,
         customer_id=transactions[2].customer_id,
         dispute_reason="Item received was not as described on the website. Merchant refusing to accept return.",
+        dispute_category=None,  # Will be set by Triage Agent
         status="under_investigation",
+        final_decision=None,
+        decision_reasoning=None,
         resolution_notes=None
     )
     db.add(dispute3)
@@ -326,7 +335,10 @@ def create_dispute_tickets(db: Session, transactions):
         transaction_id=transactions[4].id,  # Second duplicate transaction
         customer_id=transactions[4].customer_id,
         dispute_reason="I was charged twice for the same purchase within minutes. This appears to be a duplicate charge.",
+        dispute_category=None,  # Will be set by Triage Agent
         status="open",
+        final_decision=None,
+        decision_reasoning=None,
         resolution_notes=None
     )
     db.add(dispute4)
@@ -337,7 +349,10 @@ def create_dispute_tickets(db: Session, transactions):
         transaction_id=transactions[5].id,
         customer_id=transactions[5].customer_id,
         dispute_reason="ATM did not dispense cash but my account was debited. ATM showed error message.",
+        dispute_category=None,  # Will be set by Triage Agent
         status="open",
+        final_decision=None,
+        decision_reasoning=None,
         resolution_notes=None
     )
     db.add(dispute5)
