@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { AlertCircle, Brain, Building2, CheckCircle2, ChevronDown, ChevronUp, Landmark, Radio, Send, WifiOff, Upload, X } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -508,6 +509,7 @@ function LiveAiFeed({
 }
 
 export default function CustomerPortalPage() {
+  const router = useRouter();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
@@ -911,11 +913,7 @@ export default function CustomerPortalPage() {
                 onClick={() => {
                   setShowDecisionModal(false);
                   if (decisionResult) {
-                    setExpandedDisputeId(decisionResult.ticket_id);
-                    fetchPastDisputes(selectedCustomerId);
-                    setTimeout(() => {
-                      document.getElementById('dispute-history-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    }, 150);
+                    router.push(`/customer/ticket/${decisionResult.ticket_id}`);
                   }
                 }}
               >
@@ -1366,7 +1364,7 @@ export default function CustomerPortalPage() {
                       {pastDisputes.map((dispute) => (
                         <div key={dispute.ticket_id} className="border border-slate-200 rounded-lg overflow-hidden">
                           <button
-                            onClick={() => setExpandedDisputeId(expandedDisputeId === dispute.ticket_id ? null : dispute.ticket_id)}
+                            onClick={() => router.push(`/customer/ticket/${dispute.ticket_id}`)}
                             className="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100 transition flex items-center justify-between"
                           >
                             <div className="flex items-center gap-3 text-left">
@@ -1395,40 +1393,7 @@ export default function CustomerPortalPage() {
                                   : "Under Review"}
                               </Badge>
                             </div>
-                            {expandedDisputeId === dispute.ticket_id ? (
-                              <ChevronUp className="h-4 w-4 text-slate-500" />
-                            ) : (
-                              <ChevronDown className="h-4 w-4 text-slate-500" />
-                            )}
                           </button>
-                          
-                          {expandedDisputeId === dispute.ticket_id && (
-                            <div className="p-4 bg-slate-50 border-t border-slate-200">
-                              <div className="mb-4">
-                                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">AI Reasoning</p>
-                                <p className="text-sm text-slate-700 bg-white p-3 rounded border border-slate-200">
-                                  {typeof dispute.decision_reasoning === 'object' ? dispute.decision_reasoning?.justification : dispute.decision_reasoning || "No reasoning provided."}
-                                </p>
-                              </div>
-                              
-                              <div>
-                                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Audit Trail</p>
-                                <div className="bg-white p-3 rounded border border-slate-200 max-h-60 overflow-y-auto space-y-2">
-                                  {dispute.audit_trail && dispute.audit_trail.map((log: any, idx: number) => {
-                                    const isObj = typeof log === 'object' && log !== null;
-                                    const key = isObj && log.id ? log.id : idx;
-                                    const text = isObj ? log.description : log;
-                                    const agent = isObj && log.agent_name ? `[${log.agent_name}] ` : '';
-                                    return (
-                                      <div key={key} className="text-xs text-slate-600 border-b border-slate-100 pb-2 last:border-0 last:pb-0">
-                                        <span className="font-medium text-slate-800">{agent}</span>{text}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            </div>
-                          )}
                         </div>
                       ))}
                     </div>
