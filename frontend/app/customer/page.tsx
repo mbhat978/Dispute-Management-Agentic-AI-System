@@ -847,10 +847,8 @@ export default function CustomerPortalPage() {
       setDecisionResult(data);
       setShowDecisionModal(true);
       
-      // Reset form
-      setSelectedCustomerId("");
+      // Reset form (Keep customer selected so history stays visible)
       setSelectedTransactionId("");
-      setTransactions([]);
       setDisputeType("");
       setDisputeReason("");
       setLoanAccountNumber("");
@@ -910,7 +908,16 @@ export default function CustomerPortalPage() {
               <Button
                 type="button"
                 className="w-full bg-blue-900 hover:bg-blue-800"
-                onClick={() => setShowDecisionModal(false)}
+                onClick={() => {
+                  setShowDecisionModal(false);
+                  if (decisionResult) {
+                    setExpandedDisputeId(decisionResult.ticket_id);
+                    fetchPastDisputes(selectedCustomerId);
+                    setTimeout(() => {
+                      document.getElementById('dispute-history-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }, 150);
+                  }
+                }}
               >
                 Close & View History
               </Button>
@@ -1342,7 +1349,7 @@ export default function CustomerPortalPage() {
             )}
 
             {selectedCustomerId && (
-              <Card className="border-slate-200 shadow-sm">
+              <Card id="dispute-history-card" className="border-slate-200 shadow-sm">
                 <CardHeader>
                   <CardTitle className="text-slate-900">Dispute History</CardTitle>
                   <CardDescription>View your past disputes and AI activity</CardDescription>
@@ -1374,16 +1381,16 @@ export default function CustomerPortalPage() {
                               </Badge>
                               <Badge
                                 className={
-                                  dispute.final_decision === "auto_approved"
+                                  dispute.final_decision === "auto_approved" || dispute.final_decision === "resolved_approved"
                                     ? "bg-green-100 text-green-800 hover:bg-green-100"
-                                    : dispute.final_decision === "auto_rejected"
+                                    : dispute.final_decision === "auto_rejected" || dispute.final_decision === "resolved_rejected"
                                     ? "bg-red-100 text-red-800 hover:bg-red-100"
                                     : "bg-yellow-100 text-yellow-800 hover:bg-yellow-100"
                                 }
                               >
-                                {dispute.final_decision === "auto_approved"
+                                {dispute.final_decision === "auto_approved" || dispute.final_decision === "resolved_approved"
                                   ? "Approved"
-                                  : dispute.final_decision === "auto_rejected"
+                                  : dispute.final_decision === "auto_rejected" || dispute.final_decision === "resolved_rejected"
                                   ? "Rejected"
                                   : "Under Review"}
                               </Badge>
