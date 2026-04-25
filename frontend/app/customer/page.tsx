@@ -1153,6 +1153,60 @@ export default function CustomerPortalPage() {
                   </div>
                 )}
 
+                <Card id="dispute-history-card" className="border-0 shadow-sm rounded-3xl bg-white mt-6">
+                <CardHeader>
+                  <CardTitle className="text-slate-900">Dispute History</CardTitle>
+                  <CardDescription>View your past disputes and AI activity</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {pastDisputesLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-900 border-t-transparent" />
+                    </div>
+                  ) : pastDisputes.length === 0 ? (
+                    <p className="text-sm text-slate-500 py-4">No past disputes found.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {pastDisputes.map((dispute) => (
+                        <div key={dispute.ticket_id} className="border border-slate-200 rounded-lg overflow-hidden">
+                          <button
+                            onClick={() => router.push(`/customer/ticket/${dispute.ticket_id}`)}
+                            className="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100 transition flex items-center justify-between"
+                          >
+                            <div className="flex items-center gap-3 text-left">
+                              <div>
+                                <p className="text-sm font-semibold text-slate-900">Ticket #{dispute.ticket_id}</p>
+                                <p className="text-xs text-slate-500">
+                                  {dispute.created_at ? new Date(dispute.created_at).toLocaleDateString() : 'N/A'}
+                                </p>
+                              </div>
+                              <Badge variant="outline" className="text-xs">
+                                {formatDisputeCategory(dispute.dispute_category)}
+                              </Badge>
+                              <Badge
+                                className={
+                                  dispute.final_decision === "auto_approved" || dispute.final_decision === "resolved_approved"
+                                    ? "bg-green-100 text-green-800 hover:bg-green-100"
+                                    : dispute.final_decision === "auto_rejected" || dispute.final_decision === "resolved_rejected"
+                                    ? "bg-red-100 text-red-800 hover:bg-red-100"
+                                    : "bg-yellow-100 text-yellow-800 hover:bg-yellow-100"
+                                }
+                              >
+                                {dispute.final_decision === "auto_approved" || dispute.final_decision === "resolved_approved"
+                                  ? "Approved"
+                                  : dispute.final_decision === "auto_rejected" || dispute.final_decision === "resolved_rejected"
+                                  ? "Rejected"
+                                  : "Under Review"}
+                              </Badge>
+                            </div>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  </CardContent>
+                </Card>
+
                 {isDisputeModalOpen && (
                   <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 overflow-y-auto">
                     <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 mt-20">
@@ -1441,60 +1495,6 @@ export default function CustomerPortalPage() {
                 </CardContent>
               </Card>
                 )}
-
-                <Card id="dispute-history-card" className="border-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-3xl bg-white overflow-hidden">
-                <CardHeader>
-                  <CardTitle className="text-slate-900">Dispute History</CardTitle>
-                  <CardDescription>View your past disputes and AI activity</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {pastDisputesLoading ? (
-                    <div className="flex items-center justify-center py-8">
-                      <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-900 border-t-transparent" />
-                    </div>
-                  ) : pastDisputes.length === 0 ? (
-                    <p className="text-sm text-slate-500 py-4">No past disputes found.</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {pastDisputes.map((dispute) => (
-                        <div key={dispute.ticket_id} className="border border-slate-200 rounded-lg overflow-hidden">
-                          <button
-                            onClick={() => router.push(`/customer/ticket/${dispute.ticket_id}`)}
-                            className="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100 transition flex items-center justify-between"
-                          >
-                            <div className="flex items-center gap-3 text-left">
-                              <div>
-                                <p className="text-sm font-semibold text-slate-900">Ticket #{dispute.ticket_id}</p>
-                                <p className="text-xs text-slate-500">
-                                  {dispute.created_at ? new Date(dispute.created_at).toLocaleDateString() : 'N/A'}
-                                </p>
-                              </div>
-                              <Badge variant="outline" className="text-xs">
-                                {formatDisputeCategory(dispute.dispute_category)}
-                              </Badge>
-                              <Badge
-                                className={
-                                  dispute.final_decision === "auto_approved" || dispute.final_decision === "resolved_approved"
-                                    ? "bg-green-100 text-green-800 hover:bg-green-100"
-                                    : dispute.final_decision === "auto_rejected" || dispute.final_decision === "resolved_rejected"
-                                    ? "bg-red-100 text-red-800 hover:bg-red-100"
-                                    : "bg-yellow-100 text-yellow-800 hover:bg-yellow-100"
-                                }
-                              >
-                                {dispute.final_decision === "auto_approved" || dispute.final_decision === "resolved_approved"
-                                  ? "Approved"
-                                  : dispute.final_decision === "auto_rejected" || dispute.final_decision === "resolved_rejected"
-                                  ? "Rejected"
-                                  : "Under Review"}
-                              </Badge>
-                            </div>
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  </CardContent>
-                </Card>
               </div>
             </div>
           </>
