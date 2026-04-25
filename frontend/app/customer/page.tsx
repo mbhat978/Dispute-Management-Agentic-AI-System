@@ -314,17 +314,23 @@ function LiveAiFeed({
         };
 
         eventSource.onerror = (error) => {
-          console.error("[LiveAiFeed] SSE connection error:", {
+          console.warn("[LiveAiFeed] SSE connection lost. Attempting to reconnect in 3 seconds...", {
             readyState: eventSource?.readyState,
-            url: `${API_BASE_URL}/api/disputes/stream`,
-            error: error
+            url: `${API_BASE_URL}/api/disputes/stream`
           });
           setConnectionStatus("disconnected");
           
-          // Close the failed connection
+          // Close the dead connection
           if (eventSource) {
             eventSource.close();
           }
+          
+          // Schedule a manual reconnect
+          if (reconnectTimeout) clearTimeout(reconnectTimeout);
+          reconnectTimeout = setTimeout(() => {
+            console.log("[LiveAiFeed] Retrying connection...");
+            connect();
+          }, 3000);
         };
       } catch (err) {
         console.error("[LiveAiFeed] Failed to create EventSource:", err);
@@ -522,6 +528,12 @@ export default function CustomerPortalPage() {
   const [decisionResult, setDecisionResult] = useState<ProcessDisputeResponse | null>(null);
   const [showDecisionModal, setShowDecisionModal] = useState(false);
   const [activeStreamTicketId, setActiveStreamTicketId] = useState<number | null>(null);
+  const [isDisputeModalOpen, setIsDisputeModalOpen] = useState(false);
+
+  // Login state
+  const [loginId, setLoginId] = useState("");
+  const [loginPassword, setPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
 
   // New state for structured dispute form
   const [disputeType, setDisputeType] = useState("");
@@ -538,6 +550,20 @@ export default function CustomerPortalPage() {
   const [pastDisputes, setPastDisputes] = useState<PastDispute[]>([]);
   const [pastDisputesLoading, setPastDisputesLoading] = useState(false);
   const [expandedDisputeId, setExpandedDisputeId] = useState<number | null>(null);
+
+  // Login handler
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    const customerExists = customers.find(c => c.id === Number(loginId));
+    if (customerExists) {
+      setSelectedCustomerId(loginId);
+      setLoginError("");
+      setLoginId("");
+      setPassword("");
+    } else {
+      setLoginError("Invalid Account ID or Password. Please try again.");
+    }
+  };
 
   // Suggestions based on dispute type
   const getDescriptionSuggestions = (type: string): string[] => {
@@ -684,6 +710,15 @@ export default function CustomerPortalPage() {
       setPastDisputesLoading(false);
     }
   };
+
+  useEffect(() => {
+    const session = localStorage.getItem("banking_session");
+    if (session) {
+      setSelectedCustomerId(session);
+    } else {
+      router.push("/"); // Kick unauthenticated users back to login
+    }
+  }, [router]);
 
   useEffect(() => {
     fetchCustomers();
@@ -848,6 +883,7 @@ export default function CustomerPortalPage() {
       setActiveStreamTicketId(data.ticket_id);
       setDecisionResult(data);
       setShowDecisionModal(true);
+      setIsDisputeModalOpen(false);
       
       // Reset form (Keep customer selected so history stays visible)
       setSelectedTransactionId("");
@@ -924,7 +960,7 @@ export default function CustomerPortalPage() {
         </div>
       )}
 
-      <div className="min-h-screen bg-slate-100">
+      <div className="min-h-screen bg-zinc-50">
       <div className="border-b bg-white">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3">
@@ -937,125 +973,201 @@ export default function CustomerPortalPage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <Link href="/">
-              <Button variant="outline">
-                Log Out
-              </Button>
-            </Link>
+            <Button
+              variant="outline"
+              className="rounded-full px-6"
+              onClick={() => {
+                localStorage.removeItem("banking_session");
+                router.push("/");
+              }}
+            >
+              Sign Out
+            </Button>
           </div>
         </div>
       </div>
 
       <div className="mx-auto max-w-7xl px-6 py-8">
-        <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
-          <div className="space-y-6">
-            <div className="rounded-2xl bg-gradient-to-r from-blue-950 via-blue-900 to-slate-800 p-8 text-white shadow-lg">
-              <p className="text-sm uppercase tracking-[0.3em] text-blue-200">Dispute Resolution</p>
-              <h2 className="mt-3 text-3xl font-semibold">Report an issue with a recent banking transaction</h2>
-              <p className="mt-3 max-w-2xl text-sm text-blue-100">
-                Use this secure form to select your customer profile, review recent transactions, and describe what went wrong in your own words.
-              </p>
-              <div className="mt-6 flex flex-wrap gap-3 text-sm">
-                <div className="rounded-full border border-white/20 bg-white/10 px-4 py-2">Card payments</div>
-                <div className="rounded-full border border-white/20 bg-white/10 px-4 py-2">ATM cash issues</div>
-                <div className="rounded-full border border-white/20 bg-white/10 px-4 py-2">Unauthorized activity</div>
+        {!selectedCustomerId ? (
+          <div className="flex min-h-screen bg-white">
+            {/* Left Marketing Side */}
+            <div className="hidden lg:flex w-1/2 bg-slate-950 flex-col justify-between p-12 relative overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-br from-blue-900/20 to-purple-900/20 z-0" />
+              <div className="relative z-10 flex items-center gap-3 text-white">
+                <Landmark className="h-8 w-8" />
+                <span className="text-xl font-bold tracking-wide uppercase">Retail Banking</span>
+              </div>
+              <div className="relative z-10 max-w-lg">
+                <h1 className="text-5xl font-light text-white leading-tight tracking-tighter mb-6">
+                  The future of <br/><span className="font-semibold">secure banking.</span>
+                </h1>
+                <p className="text-slate-400 text-lg">
+                  Access your digital wallet, monitor real-time transactions, and resolve disputes instantly with our next-generation AI support.
+                </p>
+              </div>
+              <div className="relative z-10 text-slate-500 text-sm">
+                © 2026 Retail Banking Corp. All rights reserved.
+              </div>
+            </div>
+            
+            {/* Right Login Side */}
+            <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-zinc-50">
+              <div className="w-full max-w-md space-y-8">
+                <div className="text-center lg:text-left">
+                  <h2 className="text-3xl font-semibold text-slate-900 tracking-tight">Welcome back</h2>
+                  <p className="text-slate-500 mt-2">Enter your Account ID to securely access your portal.</p>
+                </div>
+                
+                <form onSubmit={handleLogin} className="space-y-6 bg-white p-8 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100">
+                  {loginError && (
+                    <div className="p-3 bg-red-50 text-red-600 text-sm rounded-xl border border-red-100">
+                      {loginError}
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="accountId">Account ID</Label>
+                    <Input
+                      id="accountId"
+                      value={loginId}
+                      onChange={(e) => setLoginId(e.target.value)}
+                      placeholder="e.g., 4"
+                      className="bg-zinc-50 border-none py-6 rounded-xl"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="password">Secure Password / PIN</Label>
+                    <Input
+                      id="password"
+                      type="password"
+                      value={loginPassword}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="bg-zinc-50 border-none py-6 rounded-xl"
+                      required
+                    />
+                  </div>
+                  <Button type="submit" className="w-full py-6 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-medium text-base">
+                    Secure Login
+                  </Button>
+                  
+                  <div className="text-center mt-4">
+                    <p className="text-xs text-slate-400">Demo Helper: Use ID <strong>4</strong> (Emily) or <strong>5</strong> (Michael)</p>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="mb-8">
+              <div className="rounded-[2.5rem] bg-gradient-to-br from-slate-900 via-slate-800 to-black p-8 text-white shadow-2xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-8 opacity-10"><Landmark className="h-48 w-48" /></div>
+                <div className="relative z-10">
+                  <p className="text-sm font-medium uppercase tracking-[0.2em] text-slate-400 mb-2">Available Balance</p>
+                  <h2 className="text-6xl font-light tracking-tighter mb-12">${selectedCustomer?.current_account_balance.toLocaleString('en-US', {minimumFractionDigits: 2})}</h2>
+                  <div className="flex items-end justify-between">
+                    <div>
+                      <p className="text-xs text-slate-400 mb-1 uppercase tracking-wider">Cardholder</p>
+                      <p className="font-medium text-lg tracking-wide">{selectedCustomer?.name}</p>
+                    </div>
+                    <Badge className="bg-white/10 text-white border-none backdrop-blur-md px-4 py-1.5 text-xs font-semibold rounded-full">
+                      {selectedCustomer?.account_tier} Tier
+                    </Badge>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <Card className="border-slate-200 shadow-sm">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-slate-900">
-                  <Building2 className="h-5 w-5 text-blue-800" />
-                  Raise a Dispute Ticket
-                </CardTitle>
-                <CardDescription>Complete the form below to create a new customer-facing dispute request.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={handleSubmit} className="space-y-6">
-                  {error && (
-                    <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
-                      <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
-                      <p className="text-sm">{error}</p>
-                    </div>
-                  )}
-
-                  <div className="grid gap-6 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <label htmlFor="customer" className="text-sm font-medium text-slate-700">Select Customer</label>
+            <div className="grid lg:grid-cols-[1fr_400px] gap-8">
+              <div className="space-y-6">
+                {transactions.length > 0 && (
+                  <div>
+                    {/* Transaction Selection Card */}
+                    <div className="mb-8 rounded-3xl bg-white p-6 shadow-sm border border-slate-100">
+                      <label htmlFor="dashboard-transaction" className="text-sm font-semibold text-slate-900 mb-3 block">
+                        Search & Select Transaction
+                      </label>
                       <select
-                        id="customer"
-                        value={selectedCustomerId}
-                        onChange={(e) => setSelectedCustomerId(e.target.value)}
-                        className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                        disabled={customersLoading}
-                      >
-                        <option value="">{customersLoading ? "Loading customers..." : "Choose a customer"}</option>
-                        {customers.map((c) => (
-                          <option key={c.id} value={c.id}>{c.name} · {c.account_tier}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <label htmlFor="transaction" className="text-sm font-medium text-slate-700">Select Transaction</label>
-                      <select
-                        id="transaction"
+                        id="dashboard-transaction"
                         value={selectedTransactionId}
-                        onChange={(e) => setSelectedTransactionId(e.target.value)}
-                        className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                        disabled={!selectedCustomerId || transactionsLoading}
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            setSelectedTransactionId(e.target.value);
+                            setIsDisputeModalOpen(true); // Auto-open the form when selected
+                          }
+                        }}
+                        className="w-full rounded-xl border border-slate-200 bg-zinc-50 px-4 py-4 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 cursor-pointer"
+                        disabled={transactionsLoading || transactions.length === 0}
                       >
                         <option value="">
-                          {!selectedCustomerId ? "Select a customer first" : transactionsLoading ? "Loading transactions..." : transactions.length > 0 ? "Choose a transaction" : "No recent transactions found"}
+                          {transactionsLoading ? "Loading transactions..." : transactions.length > 0 ? "Select a transaction to report an issue..." : "No transactions found"}
                         </option>
                         {transactions.map((t) => (
-                          <option key={t.id} value={t.id}>#{t.id} · {t.merchant_name} · ${t.amount.toFixed(2)}</option>
+                          <option key={t.id} value={t.id}>
+                            {new Date(t.transaction_date).toLocaleDateString()} • {t.merchant_name} • ${t.amount.toFixed(2)}
+                          </option>
                         ))}
                       </select>
                     </div>
-                  </div>
 
-                  {transactions.length > 0 && (
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                      <div className="mb-3 flex items-center justify-between">
-                        <h3 className="text-sm font-semibold text-slate-800">Recent transactions</h3>
-                        <p className="text-xs text-slate-500">Showing latest {transactions.length} records</p>
+                    <div className="mb-6 flex items-end justify-between px-2">
+                      <div>
+                        <h3 className="text-xl font-semibold text-slate-900 tracking-tight">Recent Activity</h3>
+                        <p className="text-sm text-slate-500 mt-1">Tap any transaction to view details or report an issue.</p>
                       </div>
-                      <div className="space-y-3">
-                        {transactions.map((t) => {
-                          const isSelected = t.id === Number(selectedTransactionId);
-                          return (
-                            <button
-                              key={t.id}
-                              type="button"
-                              onClick={() => setSelectedTransactionId(String(t.id))}
-                              className={`flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left transition ${isSelected ? "border-blue-600 bg-blue-50 shadow-sm" : "border-slate-200 bg-white hover:border-slate-300"}`}
-                            >
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <p className="text-sm font-semibold text-slate-900">{t.merchant_name}</p>
-                                  <Badge
-                                    variant="outline"
-                                    className={
-                                      t.transaction_type === 'credit'
-                                        ? 'bg-green-50 text-green-700 border-green-200 text-xs'
-                                        : 'bg-slate-50 text-slate-700 border-slate-200 text-xs'
-                                    }
-                                  >
-                                    {(t.transaction_type || 'debit').toUpperCase()}
-                                  </Badge>
-                                </div>
-                                <p className="text-xs text-slate-500">
-                                  {new Date(t.transaction_date).toLocaleString()} · {t.status}{t.is_international ? " · International" : ""}
-                                </p>
-                              </div>
-                              <p className="text-sm font-bold text-slate-900">${t.amount.toFixed(2)}</p>
-                            </button>
-                          );
-                        })}
-                      </div>
+                      <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">{transactions.length} Records</p>
                     </div>
-                  )}
+                    <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+                      {transactions.map((t) => (
+                        <button
+                          key={t.id}
+                          onClick={() => {
+                            setSelectedTransactionId(String(t.id));
+                            setIsDisputeModalOpen(true);
+                          }}
+                          className="flex w-full items-center justify-between rounded-2xl px-4 py-4 text-left transition hover:bg-zinc-100 group border-b border-zinc-100 last:border-0"
+                        >
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className="text-sm font-semibold text-slate-900">{t.merchant_name}</p>
+                              <Badge
+                                variant="outline"
+                                className={
+                                  t.transaction_type === 'credit'
+                                    ? 'bg-green-50 text-green-700 border-green-200 text-xs'
+                                    : 'bg-slate-50 text-slate-700 border-slate-200 text-xs'
+                                }
+                              >
+                                {(t.transaction_type || 'debit').toUpperCase()}
+                              </Badge>
+                            </div>
+                            <p className="text-xs text-slate-500">
+                              {new Date(t.transaction_date).toLocaleString()} · {t.status}{t.is_international ? " · International" : ""}
+                            </p>
+                          </div>
+                          <p className="text-sm font-bold text-slate-900">${t.amount.toFixed(2)}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {isDisputeModalOpen && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 overflow-y-auto">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 mt-20">
+                      <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                        <h3 className="text-lg font-semibold text-slate-900">Report an Issue</h3>
+                        <button onClick={() => setIsDisputeModalOpen(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+                      </div>
+                      <div className="p-6 max-h-[70vh] overflow-y-auto">
+                        <form onSubmit={handleSubmit} className="space-y-6">
+                          {error && (
+                            <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
+                              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+                              <p className="text-sm">{error}</p>
+                            </div>
+                          )}
 
                   <div className="space-y-2">
                     <Label htmlFor="disputeType" className="text-sm font-medium text-slate-700">Dispute Type *</Label>
@@ -1264,61 +1376,45 @@ export default function CustomerPortalPage() {
                     </>
                   )}
 
-                  <Button type="submit" disabled={submitLoading || !selectedCustomerId || !selectedTransactionId || !disputeType || !disputeReason.trim()} className="w-full bg-blue-900 hover:bg-blue-800">
-                    {submitLoading ? (
-                      <>
-                        <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                        AI is reviewing your case...
-                      </>
-                    ) : (
-                      <>
-                        <Send className="mr-2 h-4 w-4" />
-                        Submit Dispute
-                      </>
-                    )}
-                  </Button>
-                </form>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="space-y-6">
-            <LiveAiFeed
-              activeTicketId={activeStreamTicketId}
-              onProcessingCompleted={() => {
-                console.log("[CustomerPortal] Refreshing customer and transaction data after dispute completion");
-                fetchCustomers();
-                if (selectedCustomerId) {
-                  fetchTransactions(selectedCustomerId);
-                  fetchPastDisputes(selectedCustomerId);
-                }
-              }}
-            />
-
-            {selectedCustomer && (
-              <Card className="border-slate-200 shadow-sm">
-                <CardHeader>
-                  <CardTitle className="text-slate-900">Customer Profile</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <p className="text-xs font-medium text-slate-500">Name</p>
-                    <p className="text-sm font-semibold text-slate-900">{selectedCustomer.name}</p>
+                          <Button type="submit" disabled={submitLoading || !selectedCustomerId || !selectedTransactionId || !disputeType || !disputeReason.trim()} className="w-full bg-blue-900 hover:bg-blue-800">
+                            {submitLoading ? (
+                              <>
+                                <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                                AI is reviewing your case...
+                              </>
+                            ) : (
+                              <>
+                                <Send className="mr-2 h-4 w-4" />
+                                Submit Dispute
+                              </>
+                            )}
+                          </Button>
+                        </form>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs font-medium text-slate-500">Account Tier</p>
-                    <Badge variant="outline" className="mt-1">{selectedCustomer.account_tier}</Badge>
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium text-slate-500">Current Account Balance</p>
-                    <p className="text-sm font-semibold text-green-600">${selectedCustomer.current_account_balance.toLocaleString()}</p>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+                )}
+              </div>
 
-            {selectedTransaction && (
-              <Card className="border-slate-200 shadow-sm">
+              <div className="space-y-6">
+                <Card className="border-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-3xl bg-white overflow-hidden">
+                  <CardContent className="p-0">
+                    <LiveAiFeed
+                      activeTicketId={activeStreamTicketId}
+                      onProcessingCompleted={() => {
+                        console.log("[CustomerPortal] Refreshing customer and transaction data after dispute completion");
+                        fetchCustomers();
+                        if (selectedCustomerId) {
+                          fetchTransactions(selectedCustomerId);
+                          fetchPastDisputes(selectedCustomerId);
+                        }
+                      }}
+                    />
+                  </CardContent>
+                </Card>
+
+                {selectedTransaction && (
+              <Card className="border-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-3xl bg-white overflow-hidden">
                 <CardHeader>
                   <CardTitle className="text-slate-900">Transaction Details</CardTitle>
                 </CardHeader>
@@ -1344,10 +1440,9 @@ export default function CustomerPortalPage() {
                   )}
                 </CardContent>
               </Card>
-            )}
+                )}
 
-            {selectedCustomerId && (
-              <Card id="dispute-history-card" className="border-slate-200 shadow-sm">
+                <Card id="dispute-history-card" className="border-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-3xl bg-white overflow-hidden">
                 <CardHeader>
                   <CardTitle className="text-slate-900">Dispute History</CardTitle>
                   <CardDescription>View your past disputes and AI activity</CardDescription>
@@ -1398,11 +1493,12 @@ export default function CustomerPortalPage() {
                       ))}
                     </div>
                   )}
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          </>
+        )}
       </div>
       </div>
     </>

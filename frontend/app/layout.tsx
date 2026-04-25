@@ -34,11 +34,11 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         {/* Navigation Bar */}
         <nav className="border-b bg-background">
-          <div className="container mx-auto px-4 py-4">
+          {/* <div className="container mx-auto px-4 py-4">
             <h1 className="text-2xl font-bold text-foreground">
               Agentic Dispute Resolution Center
             </h1>
-          </div>
+          </div> */}
         </nav>
         <Separator />
         
