@@ -544,7 +544,6 @@ export default function CustomerPortalPage() {
   const [merchantReceipt, setMerchantReceipt] = useState<File | null>(null);
   const [expectedAmount, setExpectedAmount] = useState("");
   const [chargedAmount, setChargedAmount] = useState("");
-  const [additionalDetails, setAdditionalDetails] = useState("");
 
   // State for past disputes
   const [pastDisputes, setPastDisputes] = useState<PastDispute[]>([]);
@@ -754,9 +753,6 @@ export default function CustomerPortalPage() {
     switch (disputeType) {
       case "fraud":
         query += "Issue: Fraudulent/unauthorized transaction detected.\n";
-        if (additionalDetails.trim()) {
-          query += `Additional Details: ${additionalDetails.trim()}\n`;
-        }
         break;
       
       case "atm_failure":
@@ -767,9 +763,6 @@ export default function CustomerPortalPage() {
         if (atmWithdrawalAmount.trim()) {
           query += `Withdrawal Amount: $${atmWithdrawalAmount.trim()}\n`;
         }
-        if (additionalDetails.trim()) {
-          query += `Additional Details: ${additionalDetails.trim()}\n`;
-        }
         break;
       
       case "emi_issue":
@@ -779,9 +772,6 @@ export default function CustomerPortalPage() {
         }
         if (emiAmount.trim()) {
           query += `EMI Amount: $${emiAmount.trim()}\n`;
-        }
-        if (additionalDetails.trim()) {
-          query += `Additional Details: ${additionalDetails.trim()}\n`;
         }
         break;
       
@@ -796,9 +786,6 @@ export default function CustomerPortalPage() {
         if (merchantReceipt) {
           query += `Merchant Receipt: ${merchantReceipt.name} (attached)\n`;
         }
-        if (additionalDetails.trim()) {
-          query += `Additional Details: ${additionalDetails.trim()}\n`;
-        }
         break;
       
       case "merchant_dispute":
@@ -806,36 +793,22 @@ export default function CustomerPortalPage() {
         if (merchantReceipt) {
           query += `Merchant Receipt: ${merchantReceipt.name} (attached)\n`;
         }
-        if (additionalDetails.trim()) {
-          query += `Additional Details: ${additionalDetails.trim()}\n`;
-        }
         break;
       
       case "duplicate":
         query += "Issue: Duplicate charge detected.\n";
-        if (additionalDetails.trim()) {
-          query += `Additional Details: ${additionalDetails.trim()}\n`;
-        }
         break;
       
       case "failed_transaction":
         query += "Issue: Transaction failed but amount was debited.\n";
-        if (additionalDetails.trim()) {
-          query += `Additional Details: ${additionalDetails.trim()}\n`;
-        }
         break;
       
       case "refund_not_received":
         query += "Issue: Refund not received for returned goods/cancelled service.\n";
-        if (additionalDetails.trim()) {
-          query += `Additional Details: ${additionalDetails.trim()}\n`;
-        }
         break;
       
       default:
-        if (additionalDetails.trim()) {
-          query += `Details: ${additionalDetails.trim()}\n`;
-        }
+        break;
     }
 
     return query.trim();
@@ -882,8 +855,8 @@ export default function CustomerPortalPage() {
       const data: ProcessDisputeResponse = await response.json();
       setActiveStreamTicketId(data.ticket_id);
       setDecisionResult(data);
-      setShowDecisionModal(true);
       setIsDisputeModalOpen(false);
+      setShowDecisionModal(true);
       
       // Reset form (Keep customer selected so history stays visible)
       setSelectedTransactionId("");
@@ -896,7 +869,6 @@ export default function CustomerPortalPage() {
       setMerchantReceipt(null);
       setExpectedAmount("");
       setChargedAmount("");
-      setAdditionalDetails("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to submit dispute");
     } finally {
@@ -1208,242 +1180,276 @@ export default function CustomerPortalPage() {
                 </Card>
 
                 {isDisputeModalOpen && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 overflow-y-auto">
-                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 mt-20">
-                      <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                        <h3 className="text-lg font-semibold text-slate-900">Report an Issue</h3>
-                        <button onClick={() => setIsDisputeModalOpen(false)} className="text-slate-400 hover:text-slate-600">✕</button>
-                      </div>
-                      <div className="p-6 max-h-[70vh] overflow-y-auto">
-                        <form onSubmit={handleSubmit} className="space-y-6">
-                          {error && (
-                            <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
-                              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
-                              <p className="text-sm">{error}</p>
-                            </div>
-                          )}
-
-                  <div className="space-y-2">
-                    <Label htmlFor="disputeType" className="text-sm font-medium text-slate-700">Dispute Type *</Label>
-                    <select
-                      id="disputeType"
-                      value={disputeType}
-                      onChange={(e) => {
-                        setDisputeType(e.target.value);
-                        // Reset type-specific fields when changing dispute type
-                        setLoanAccountNumber("");
-                        setEmiAmount("");
-                        setAtmLocation("");
-                        setAtmWithdrawalAmount("");
-                        setMerchantReceipt(null);
-                        setExpectedAmount("");
-                        setChargedAmount("");
-                      }}
-                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                      disabled={!selectedTransactionId}
-                    >
-                      <option value="">Select dispute type...</option>
-                      <option value="fraud">🚨 Fraudulent Transaction</option>
-                      <option value="atm_failure">🏧 ATM Failure (Cash Not Dispensed)</option>
-                      <option value="emi_issue">💳 EMI/Loan Issue</option>
-                      <option value="incorrect_amount">💰 Incorrect Amount Charged</option>
-                      <option value="merchant_dispute">🏪 Merchant Dispute</option>
-                      <option value="duplicate">📋 Duplicate Charge</option>
-                      <option value="failed_transaction">❌ Failed Transaction</option>
-                      <option value="refund_not_received">↩️ Refund Not Received</option>
-                    </select>
-                  </div>
-
-                  {/* Dynamic fields based on dispute type */}
-                  {disputeType === "emi_issue" && (
-                    <div className="space-y-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
-                      <h4 className="text-sm font-semibold text-slate-900">EMI/Loan Details</h4>
-                      <div className="space-y-2">
-                        <Label htmlFor="loanAccountNumber">Loan Account Number</Label>
-                        <Input
-                          id="loanAccountNumber"
-                          type="text"
-                          value={loanAccountNumber}
-                          onChange={(e) => setLoanAccountNumber(e.target.value)}
-                          placeholder="e.g., LOAN123456789"
-                          className="bg-white"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="emiAmount">EMI Amount</Label>
-                        <Input
-                          id="emiAmount"
-                          type="number"
-                          step="0.01"
-                          value={emiAmount}
-                          onChange={(e) => setEmiAmount(e.target.value)}
-                          placeholder="e.g., 500.00"
-                          className="bg-white"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {disputeType === "atm_failure" && (
-                    <div className="space-y-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
-                      <h4 className="text-sm font-semibold text-slate-900">ATM Transaction Details</h4>
-                      <div className="space-y-2">
-                        <Label htmlFor="atmLocation">ATM Location</Label>
-                        <Input
-                          id="atmLocation"
-                          type="text"
-                          value={atmLocation}
-                          onChange={(e) => setAtmLocation(e.target.value)}
-                          placeholder="e.g., Main Street Branch, Downtown"
-                          className="bg-white"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="atmWithdrawalAmount">Withdrawal Amount</Label>
-                        <Input
-                          id="atmWithdrawalAmount"
-                          type="number"
-                          step="0.01"
-                          value={atmWithdrawalAmount}
-                          onChange={(e) => setAtmWithdrawalAmount(e.target.value)}
-                          placeholder="e.g., 200.00"
-                          className="bg-white"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {(disputeType === "merchant_dispute" || disputeType === "incorrect_amount") && (
-                    <div className="space-y-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
-                      <h4 className="text-sm font-semibold text-slate-900">
-                        {disputeType === "incorrect_amount" ? "Amount Details" : "Merchant Details"}
-                      </h4>
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 md:p-8 overflow-hidden">
+                    <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-6xl max-h-full overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col">
                       
-                      {disputeType === "incorrect_amount" && (
-                        <>
-                          <div className="space-y-2">
-                            <Label htmlFor="expectedAmount">Expected Amount</Label>
-                            <Input
-                              id="expectedAmount"
-                              type="number"
-                              step="0.01"
-                              value={expectedAmount}
-                              onChange={(e) => setExpectedAmount(e.target.value)}
-                              placeholder="e.g., 50.00"
-                              className="bg-white"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="chargedAmount">Charged Amount</Label>
-                            <Input
-                              id="chargedAmount"
-                              type="number"
-                              step="0.01"
-                              value={chargedAmount}
-                              onChange={(e) => setChargedAmount(e.target.value)}
-                              placeholder="e.g., 75.00"
-                              className="bg-white"
-                            />
-                          </div>
-                        </>
-                      )}
-                      
-                      <div className="space-y-2">
-                        <Label htmlFor="merchantReceipt">Merchant Receipt (Optional)</Label>
-                        <div className="flex items-center gap-2">
-                          <label
-                            htmlFor="merchantReceipt"
-                            className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 transition hover:bg-slate-50"
-                          >
-                            <Upload className="h-4 w-4" />
-                            {merchantReceipt ? "Change File" : "Upload Receipt"}
-                          </label>
-                          <input
-                            id="merchantReceipt"
-                            type="file"
-                            accept="image/*,.pdf"
-                            onChange={(e) => setMerchantReceipt(e.target.files?.[0] || null)}
-                            className="hidden"
-                          />
-                          {merchantReceipt && (
-                            <div className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm">
-                              <span className="text-slate-700">{merchantReceipt.name}</span>
-                              <button
-                                type="button"
-                                onClick={() => setMerchantReceipt(null)}
-                                className="text-red-600 hover:text-red-700"
-                              >
-                                <X className="h-4 w-4" />
-                              </button>
-                            </div>
-                          )}
+                      {/* Modal Header */}
+                      <div className="px-8 py-5 border-b border-slate-100 flex justify-between items-center bg-white shrink-0">
+                        <div className="flex items-center gap-3">
+                          <div className="bg-blue-100 text-blue-700 p-2 rounded-full"><Brain className="h-5 w-5" /></div>
+                          <h3 className="text-xl font-bold text-slate-900">Dispute Resolution Workspace</h3>
                         </div>
+                        <button onClick={() => setIsDisputeModalOpen(false)} className="rounded-full p-2 hover:bg-slate-100 transition text-slate-500">
+                          <X className="h-6 w-6" />
+                        </button>
                       </div>
-                    </div>
-                  )}
 
-                  {disputeType && (
-                    <>
-                      <div className="space-y-2">
-                        <Label htmlFor="reason" className="text-sm font-medium text-slate-700">
-                          Brief Description *
-                        </Label>
-                        <textarea
-                          id="reason"
-                          value={disputeReason}
-                          onChange={(e) => setDisputeReason(e.target.value)}
-                          placeholder="Provide a brief summary of the issue..."
-                          className="min-h-[100px] w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                          required
-                        />
-                        {descriptionSuggestions.length > 0 && !disputeReason.trim() && (
-                          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
-                            <p className="mb-2 text-xs font-semibold text-slate-700">💡 Quick suggestions (click to use):</p>
-                            <div className="flex flex-wrap gap-2">
-                              {descriptionSuggestions.map((suggestion, index) => (
-                                <button
-                                  key={index}
-                                  type="button"
-                                  onClick={() => setDisputeReason(suggestion)}
-                                  className="rounded-md border border-blue-300 bg-white px-3 py-1.5 text-xs text-slate-700 transition hover:bg-blue-100 hover:border-blue-400"
-                                >
-                                  {suggestion}
-                                </button>
-                              ))}
+                      {/* Modal Split Content */}
+                      <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
+                        
+                        {/* Left Side: Context & Form */}
+                        <div className="w-full lg:w-[60%] p-8 overflow-y-auto border-r border-slate-100 bg-white">
+                          {/* Transaction Context Card */}
+                          {selectedTransaction && (
+                            <div className="mb-8 p-6 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
+                              <div>
+                                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Disputing Transaction</p>
+                                <p className="text-lg font-bold text-slate-900">{selectedTransaction.merchant_name}</p>
+                                <p className="text-sm text-slate-500">{new Date(selectedTransaction.transaction_date).toLocaleString()}</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-3xl font-light text-slate-900">${selectedTransaction.amount.toFixed(2)}</p>
+                                <Badge variant="outline" className="mt-1 bg-white">{selectedTransaction.status}</Badge>
+                              </div>
                             </div>
-                          </div>
-                        )}
-                      </div>
+                          )}
 
-                      <div className="space-y-2">
-                        <Label htmlFor="additionalDetails" className="text-sm font-medium text-slate-700">
-                          Additional Details (Optional)
-                        </Label>
-                        <textarea
-                          id="additionalDetails"
-                          value={additionalDetails}
-                          onChange={(e) => setAdditionalDetails(e.target.value)}
-                          placeholder="Any other relevant information..."
-                          className="min-h-[80px] w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                        />
-                      </div>
-                    </>
-                  )}
+                          {/* The Dispute Form */}
+                          <form onSubmit={handleSubmit} className="space-y-6">
+                            {error && (
+                              <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
+                                <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+                                <p className="text-sm">{error}</p>
+                              </div>
+                            )}
 
-                          <Button type="submit" disabled={submitLoading || !selectedCustomerId || !selectedTransactionId || !disputeType || !disputeReason.trim()} className="w-full bg-blue-900 hover:bg-blue-800">
-                            {submitLoading ? (
+                            <div className="space-y-2">
+                              <Label htmlFor="disputeType" className="text-sm font-medium text-slate-700">Dispute Type *</Label>
+                              <select
+                                id="disputeType"
+                                value={disputeType}
+                                onChange={(e) => {
+                                  setDisputeType(e.target.value);
+                                  // Reset type-specific fields when changing dispute type
+                                  setLoanAccountNumber("");
+                                  setEmiAmount("");
+                                  setAtmLocation("");
+                                  setAtmWithdrawalAmount("");
+                                  setMerchantReceipt(null);
+                                  setExpectedAmount("");
+                                  setChargedAmount("");
+                                }}
+                                className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                                disabled={!selectedTransactionId}
+                              >
+                                <option value="">Select dispute type...</option>
+                                <option value="fraud">🚨 Fraudulent Transaction</option>
+                                <option value="atm_failure">🏧 ATM Failure (Cash Not Dispensed)</option>
+                                <option value="emi_issue">💳 EMI/Loan Issue</option>
+                                <option value="incorrect_amount">💰 Incorrect Amount Charged</option>
+                                <option value="merchant_dispute">🏪 Merchant Dispute</option>
+                                <option value="duplicate">📋 Duplicate Charge</option>
+                                <option value="failed_transaction">❌ Failed Transaction</option>
+                                <option value="refund_not_received">↩️ Refund Not Received</option>
+                              </select>
+                            </div>
+
+                            {/* Dynamic fields based on dispute type */}
+                            {disputeType === "emi_issue" && (
+                              <div className="space-y-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
+                                <h4 className="text-sm font-semibold text-slate-900">EMI/Loan Details</h4>
+                                <div className="space-y-2">
+                                  <Label htmlFor="loanAccountNumber">Loan Account Number</Label>
+                                  <Input
+                                    id="loanAccountNumber"
+                                    type="text"
+                                    value={loanAccountNumber}
+                                    onChange={(e) => setLoanAccountNumber(e.target.value)}
+                                    placeholder="e.g., LOAN123456789"
+                                    className="bg-white"
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="emiAmount">EMI Amount</Label>
+                                  <Input
+                                    id="emiAmount"
+                                    type="number"
+                                    step="0.01"
+                                    value={emiAmount}
+                                    onChange={(e) => setEmiAmount(e.target.value)}
+                                    placeholder="e.g., 500.00"
+                                    className="bg-white"
+                                  />
+                                </div>
+                              </div>
+                            )}
+
+                            {disputeType === "atm_failure" && (
+                              <div className="space-y-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
+                                <h4 className="text-sm font-semibold text-slate-900">ATM Transaction Details</h4>
+                                <div className="space-y-2">
+                                  <Label htmlFor="atmLocation">ATM Location</Label>
+                                  <Input
+                                    id="atmLocation"
+                                    type="text"
+                                    value={atmLocation}
+                                    onChange={(e) => setAtmLocation(e.target.value)}
+                                    placeholder="e.g., Main Street Branch, Downtown"
+                                    className="bg-white"
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="atmWithdrawalAmount">Withdrawal Amount</Label>
+                                  <Input
+                                    id="atmWithdrawalAmount"
+                                    type="number"
+                                    step="0.01"
+                                    value={atmWithdrawalAmount}
+                                    onChange={(e) => setAtmWithdrawalAmount(e.target.value)}
+                                    placeholder="e.g., 200.00"
+                                    className="bg-white"
+                                  />
+                                </div>
+                              </div>
+                            )}
+
+                            {(disputeType === "merchant_dispute" || disputeType === "incorrect_amount") && (
+                              <div className="space-y-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
+                                <h4 className="text-sm font-semibold text-slate-900">
+                                  {disputeType === "incorrect_amount" ? "Amount Details" : "Merchant Details"}
+                                </h4>
+                                
+                                {disputeType === "incorrect_amount" && (
+                                  <>
+                                    <div className="space-y-2">
+                                      <Label htmlFor="expectedAmount">Expected Amount</Label>
+                                      <Input
+                                        id="expectedAmount"
+                                        type="number"
+                                        step="0.01"
+                                        value={expectedAmount}
+                                        onChange={(e) => setExpectedAmount(e.target.value)}
+                                        placeholder="e.g., 50.00"
+                                        className="bg-white"
+                                      />
+                                    </div>
+                                    <div className="space-y-2">
+                                      <Label htmlFor="chargedAmount">Charged Amount</Label>
+                                      <Input
+                                        id="chargedAmount"
+                                        type="number"
+                                        step="0.01"
+                                        value={chargedAmount}
+                                        onChange={(e) => setChargedAmount(e.target.value)}
+                                        placeholder="e.g., 75.00"
+                                        className="bg-white"
+                                      />
+                                    </div>
+                                  </>
+                                )}
+                                
+                                <div className="space-y-2">
+                                  <Label htmlFor="merchantReceipt">Merchant Receipt (Optional)</Label>
+                                  <div className="flex items-center gap-2">
+                                    <label
+                                      htmlFor="merchantReceipt"
+                                      className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 transition hover:bg-slate-50"
+                                    >
+                                      <Upload className="h-4 w-4" />
+                                      {merchantReceipt ? "Change File" : "Upload Receipt"}
+                                    </label>
+                                    <input
+                                      id="merchantReceipt"
+                                      type="file"
+                                      accept="image/*,.pdf"
+                                      onChange={(e) => setMerchantReceipt(e.target.files?.[0] || null)}
+                                      className="hidden"
+                                    />
+                                    {merchantReceipt && (
+                                      <div className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm">
+                                        <span className="text-slate-700">{merchantReceipt.name}</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => setMerchantReceipt(null)}
+                                          className="text-red-600 hover:text-red-700"
+                                        >
+                                          <X className="h-4 w-4" />
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {disputeType && (
                               <>
-                                <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                                AI is reviewing your case...
-                              </>
-                            ) : (
-                              <>
-                                <Send className="mr-2 h-4 w-4" />
-                                Submit Dispute
+                                <div className="space-y-2">
+                                  <Label htmlFor="reason" className="text-sm font-medium text-slate-700">
+                                    Brief Description *
+                                  </Label>
+                                  <textarea
+                                    id="reason"
+                                    value={disputeReason}
+                                    onChange={(e) => setDisputeReason(e.target.value)}
+                                    placeholder="Provide a brief summary of the issue..."
+                                    className="min-h-[100px] w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                                    required
+                                  />
+                                  {descriptionSuggestions.length > 0 && !disputeReason.trim() && (
+                                    <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+                                      <p className="mb-2 text-xs font-semibold text-slate-700">💡 Quick suggestions (click to use):</p>
+                                      <div className="flex flex-wrap gap-2">
+                                        {descriptionSuggestions.map((suggestion, index) => (
+                                          <button
+                                            key={index}
+                                            type="button"
+                                            onClick={() => setDisputeReason(suggestion)}
+                                            className="rounded-md border border-blue-300 bg-white px-3 py-1.5 text-xs text-slate-700 transition hover:bg-blue-100 hover:border-blue-400"
+                                          >
+                                            {suggestion}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+
                               </>
                             )}
-                          </Button>
-                        </form>
+
+                            <Button type="submit" disabled={submitLoading || !selectedCustomerId || !selectedTransactionId || !disputeType || !disputeReason.trim()} className="w-full bg-blue-900 hover:bg-blue-800">
+                              {submitLoading ? (
+                                <>
+                                  <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                                  AI is reviewing your case...
+                                </>
+                              ) : (
+                                <>
+                                  <Send className="mr-2 h-4 w-4" />
+                                  Submit Dispute
+                                </>
+                              )}
+                            </Button>
+                          </form>
+                        </div>
+
+                        {/* Right Side: Live AI Feed */}
+                        <div className="w-full lg:w-[40%] bg-zinc-50 overflow-y-auto">
+                          <div className="p-6 h-full">
+                            <LiveAiFeed
+                              activeTicketId={activeStreamTicketId}
+                              onProcessingCompleted={() => {
+                                fetchCustomers();
+                                if (selectedCustomerId) {
+                                  fetchTransactions(selectedCustomerId);
+                                  fetchPastDisputes(selectedCustomerId);
+                                }
+                              }}
+                            />
+                          </div>
+                        </div>
+                        
                       </div>
                     </div>
                   </div>
@@ -1451,21 +1457,23 @@ export default function CustomerPortalPage() {
               </div>
 
               <div className="space-y-6">
-                <Card className="border-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-3xl bg-white overflow-hidden">
-                  <CardContent className="p-0">
-                    <LiveAiFeed
-                      activeTicketId={activeStreamTicketId}
-                      onProcessingCompleted={() => {
-                        console.log("[CustomerPortal] Refreshing customer and transaction data after dispute completion");
-                        fetchCustomers();
-                        if (selectedCustomerId) {
-                          fetchTransactions(selectedCustomerId);
-                          fetchPastDisputes(selectedCustomerId);
-                        }
-                      }}
-                    />
-                  </CardContent>
-                </Card>
+                {!isDisputeModalOpen && (
+                  <Card className="border-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-3xl bg-white overflow-hidden">
+                    <CardContent className="p-0">
+                      <LiveAiFeed
+                        activeTicketId={activeStreamTicketId}
+                        onProcessingCompleted={() => {
+                          console.log("[CustomerPortal] Refreshing customer and transaction data after dispute completion");
+                          fetchCustomers();
+                          if (selectedCustomerId) {
+                            fetchTransactions(selectedCustomerId);
+                            fetchPastDisputes(selectedCustomerId);
+                          }
+                        }}
+                      />
+                    </CardContent>
+                  </Card>
+                )}
 
                 {selectedTransaction && (
               <Card className="border-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-3xl bg-white overflow-hidden">
