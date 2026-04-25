@@ -1032,7 +1032,7 @@ export default function CustomerPortalPage() {
           </div>
         ) : (
           <>
-            <div className="mb-8">
+            <div className="max-w-5xl mx-auto mb-8">
               <div className="rounded-[2.5rem] bg-gradient-to-br from-slate-900 via-slate-800 to-black p-8 text-white shadow-2xl relative overflow-hidden">
                 <div className="absolute top-0 right-0 p-8 opacity-10"><Landmark className="h-48 w-48" /></div>
                 <div className="relative z-10">
@@ -1051,9 +1051,8 @@ export default function CustomerPortalPage() {
               </div>
             </div>
 
-            <div className="grid lg:grid-cols-[1fr_400px] gap-8">
-              <div className="space-y-6">
-                {transactions.length > 0 && (
+            <div className="max-w-5xl mx-auto space-y-8">
+              {transactions.length > 0 && (
                   <div>
                     {/* Transaction Selection Card */}
                     <div className="mb-8 rounded-3xl bg-white p-6 shadow-sm border border-slate-100">
@@ -1454,56 +1453,6 @@ export default function CustomerPortalPage() {
                     </div>
                   </div>
                 )}
-              </div>
-
-              <div className="space-y-6">
-                {!isDisputeModalOpen && (
-                  <Card className="border-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-3xl bg-white overflow-hidden">
-                    <CardContent className="p-0">
-                      <LiveAiFeed
-                        activeTicketId={activeStreamTicketId}
-                        onProcessingCompleted={() => {
-                          console.log("[CustomerPortal] Refreshing customer and transaction data after dispute completion");
-                          fetchCustomers();
-                          if (selectedCustomerId) {
-                            fetchTransactions(selectedCustomerId);
-                            fetchPastDisputes(selectedCustomerId);
-                          }
-                        }}
-                      />
-                    </CardContent>
-                  </Card>
-                )}
-
-                {selectedTransaction && (
-              <Card className="border-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-3xl bg-white overflow-hidden">
-                <CardHeader>
-                  <CardTitle className="text-slate-900">Transaction Details</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <p className="text-xs font-medium text-slate-500">Amount</p>
-                    <p className="text-2xl font-bold text-red-600">${selectedTransaction.amount.toFixed(2)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium text-slate-500">Merchant</p>
-                    <p className="text-sm font-semibold text-slate-900">{selectedTransaction.merchant_name}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium text-slate-500">Date</p>
-                    <p className="text-sm text-slate-900">{new Date(selectedTransaction.transaction_date).toLocaleString()}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium text-slate-500">Status</p>
-                    <Badge variant="outline" className="mt-1">{selectedTransaction.status}</Badge>
-                  </div>
-                  {selectedTransaction.is_international && (
-                    <Badge variant="secondary" className="bg-blue-100 text-blue-700">🌍 International Transaction</Badge>
-                  )}
-                </CardContent>
-              </Card>
-                )}
-              </div>
             </div>
           </>
         )}
