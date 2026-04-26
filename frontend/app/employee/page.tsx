@@ -2,10 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Briefcase, ShieldCheck, Activity, AlertCircle, CheckCircle2, Search } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 // Define the Dispute type based on our API response
 interface Dispute {
@@ -52,15 +55,15 @@ function getErrorMessage(errorData: ApiErrorResponse | null | undefined, fallbac
 function getStatusBadge(status: string) {
   switch (status) {
     case "auto_approved":
-      return { variant: "default" as const, className: "bg-green-500 hover:bg-green-600" };
+    case "resolved_approved":
+      return { variant: "outline" as const, className: "bg-green-50 text-green-700 border-green-200 font-semibold" };
     case "auto_rejected":
-      return { variant: "destructive" as const, className: "" };
+    case "resolved_rejected":
+      return { variant: "outline" as const, className: "bg-red-50 text-red-700 border-red-200 font-semibold" };
     case "human_review_required":
-      return { variant: "secondary" as const, className: "bg-yellow-500 hover:bg-yellow-600 text-black" };
-    case "pending":
-      return { variant: "outline" as const, className: "" };
+      return { variant: "outline" as const, className: "bg-amber-50 text-amber-700 border-amber-200 font-semibold animate-pulse" };
     default:
-      return { variant: "outline" as const, className: "" };
+      return { variant: "outline" as const, className: "bg-slate-50 text-slate-700 border-slate-200 font-semibold" };
   }
 }
 
@@ -73,10 +76,27 @@ function formatStatus(status: string): string {
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [disputes, setDisputes] = useState<Dispute[]>([]);
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [activeTab, setActiveTab] = useState<"all" | "review" | "resolved">("all");
+
+  const filteredDisputes = useMemo(() => {
+    return disputes.filter((d) => {
+      const matchesSearch =
+        d.customer_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        d.id.toString().includes(searchTerm);
+      
+      if (!matchesSearch) return false;
+      
+      if (activeTab === "review") return d.status === "human_review_required" || d.status === "pending";
+      if (activeTab === "resolved") return d.status !== "human_review_required" && d.status !== "pending";
+      return true;
+    });
+  }, [disputes, searchTerm, activeTab]);
 
   // Fetch disputes and analytics data
   useEffect(() => {
@@ -116,111 +136,140 @@ export default function DashboardPage() {
 
 
   return (
-    <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Dispute Dashboard</h1>
-          <p className="text-muted-foreground mt-2">
-            View and manage all banking dispute tickets
-          </p>
+    <div className="min-h-screen bg-zinc-50 pb-12">
+      {/* Premium Header */}
+      <div className="border-b bg-white shadow-sm">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+          <div className="flex items-center gap-3">
+            <div className="rounded-xl bg-slate-900 p-2 text-white shadow-md">
+              <Briefcase className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Internal Operations</p>
+              <h1 className="text-xl font-bold text-slate-900">Agent Command Center</h1>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              className="rounded-full px-6 bg-white hover:bg-slate-50 border-slate-200 text-slate-700 font-medium transition-all"
+              onClick={() => {
+                localStorage.removeItem("employee_session");
+                router.push("/");
+              }}
+            >
+              Sign Out
+            </Button>
+          </div>
         </div>
-        <Link href="/">
-          <Button variant="outline">
-            Log Out
-          </Button>
-        </Link>
       </div>
+
+      <div className="mx-auto max-w-7xl px-6 pt-8 space-y-8">
 
       {/* Executive Metrics Dashboard */}
       {analytics && (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {/* Card 1: Total Disputes */}
-          <Card className="border-l-4 border-l-blue-500">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Total Disputes
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">{analytics.total_disputes}</div>
-              <p className="text-xs text-muted-foreground mt-1">
-                All-time dispute tickets
-              </p>
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+          <Card className="border-0 shadow-sm rounded-3xl bg-white overflow-hidden relative">
+            <div className="absolute top-0 left-0 w-full h-1 bg-blue-500" />
+            <CardContent className="p-6">
+              <div className="flex justify-between items-start mb-4">
+                <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Total Disputes</p>
+                <Activity className="h-5 w-5 text-blue-500" />
+              </div>
+              <div className="text-4xl font-light tracking-tighter text-slate-900">{analytics.total_disputes}</div>
+              <p className="text-sm text-slate-500 mt-2">All-time tickets processed</p>
             </CardContent>
           </Card>
 
-          {/* Card 2: Auto-Resolution Rate */}
-          <Card className="border-l-4 border-l-green-500">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Auto-Resolution Rate
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-green-600">
-                {(analytics.auto_resolution_rate ?? 0).toFixed(1)}%
+          <Card className="border-0 shadow-sm rounded-3xl bg-white overflow-hidden relative">
+            <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500" />
+            <CardContent className="p-6">
+              <div className="flex justify-between items-start mb-4">
+                <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Auto-Resolution</p>
+                <CheckCircle2 className="h-5 w-5 text-emerald-500" />
               </div>
-              <div className="mt-2">
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    className="bg-green-600 h-2 rounded-full transition-all duration-500"
-                    style={{ width: `${analytics.auto_resolution_rate ?? 0}%` }}
-                  />
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  High efficiency indicator
-                </p>
+              <div className="text-4xl font-light tracking-tighter text-emerald-600">{(analytics.auto_resolution_rate ?? 0).toFixed(1)}%</div>
+              <div className="mt-3 w-full bg-slate-100 rounded-full h-1.5">
+                <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: `${analytics.auto_resolution_rate ?? 0}%` }} />
               </div>
             </CardContent>
           </Card>
 
-          {/* Card 3: Human Intervention Required */}
-          <Card className="border-l-4 border-l-yellow-500">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Human Intervention Required
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-yellow-600">
-                {analytics.human_intervention_required}
+          <Card className="border-0 shadow-sm rounded-3xl bg-white overflow-hidden relative">
+            <div className="absolute top-0 left-0 w-full h-1 bg-amber-500" />
+            <CardContent className="p-6">
+              <div className="flex justify-between items-start mb-4">
+                <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Needs Review</p>
+                <AlertCircle className="h-5 w-5 text-amber-500" />
               </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Tickets pending review
-              </p>
+              <div className="text-4xl font-light tracking-tighter text-amber-600">{analytics.human_intervention_required}</div>
+              <p className="text-sm text-amber-700/70 mt-2 font-medium">Awaiting agent action</p>
             </CardContent>
           </Card>
 
-          {/* Card 4: Total Fraud Prevented */}
-          <Card className="border-l-4 border-l-purple-500">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Total Fraud Prevented
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-purple-600">
-                ${(analytics.total_fraud_prevented ?? 0).toLocaleString('en-US', {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2
-                })}
+          <Card className="border-0 shadow-sm rounded-3xl bg-white overflow-hidden relative">
+            <div className="absolute top-0 left-0 w-full h-1 bg-purple-500" />
+            <CardContent className="p-6">
+              <div className="flex justify-between items-start mb-4">
+                <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Fraud Prevented</p>
+                <ShieldCheck className="h-5 w-5 text-purple-500" />
               </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Fraudulent claims blocked
-              </p>
+              <div className="text-4xl font-light tracking-tighter text-purple-600">
+                ${(analytics.total_fraud_prevented ?? 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              </div>
+              <p className="text-sm text-slate-500 mt-2">Saved by AI detection</p>
             </CardContent>
           </Card>
         </div>
       )}
 
       {/* Main Content Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle>All Disputes</CardTitle>
-          <CardDescription>
-            A comprehensive list of all dispute tickets with their current status
-          </CardDescription>
+      <Card className="border-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-3xl bg-white overflow-hidden">
+        <CardHeader className="border-b border-slate-100 pb-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <CardTitle className="text-xl text-slate-900">Ticket Inbox</CardTitle>
+              <CardDescription>Manage and resolve customer disputes</CardDescription>
+            </div>
+            
+            {/* Search & Tabs Toolbar */}
+            <div className="flex flex-col sm:flex-row items-center gap-3">
+              <div className="relative w-full sm:w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Input
+                  placeholder="Search by name or ID..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-9 bg-slate-50 border-slate-200 rounded-xl focus-visible:ring-blue-500 w-full"
+                />
+              </div>
+              <div className="flex bg-slate-100 p-1 rounded-xl w-full sm:w-auto">
+                <button
+                  onClick={() => setActiveTab("all")}
+                  className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex-1 sm:flex-none ${activeTab === "all" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => setActiveTab("review")}
+                  className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex-1 sm:flex-none flex items-center justify-center gap-2 ${activeTab === "review" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                >
+                  Action Required
+                  {disputes.filter(d => d.status === "human_review_required").length > 0 && (
+                    <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">
+                      {disputes.filter(d => d.status === "human_review_required").length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => setActiveTab("resolved")}
+                  className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex-1 sm:flex-none ${activeTab === "resolved" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                >
+                  Resolved
+                </button>
+              </div>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {loading && (
@@ -235,13 +284,30 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {!loading && !error && disputes.length === 0 && (
-            <div className="flex justify-center items-center py-8">
-              <p className="text-muted-foreground">No disputes found</p>
+          {!loading && !error && filteredDisputes.length === 0 && (
+            <div className="flex flex-col justify-center items-center py-16 text-center">
+              <div className="h-16 w-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
+                <Search className="h-8 w-8 text-slate-300" />
+              </div>
+              <h3 className="text-lg font-semibold text-slate-900">No tickets found</h3>
+              <p className="text-slate-500 max-w-sm mt-1">
+                {disputes.length === 0
+                  ? "There are currently no disputes in the system."
+                  : "We couldn't find any tickets matching your current search or filter."}
+              </p>
+              {disputes.length > 0 && (
+                <Button
+                  variant="link"
+                  onClick={() => { setSearchTerm(""); setActiveTab("all"); }}
+                  className="mt-2 text-blue-600"
+                >
+                  Clear all filters
+                </Button>
+              )}
             </div>
           )}
 
-          {!loading && !error && disputes.length > 0 && (
+          {!loading && !error && filteredDisputes.length > 0 && (
             <div className="rounded-md border">
               <Table>
                 <TableHeader>
@@ -255,10 +321,14 @@ export default function DashboardPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {disputes.map((dispute) => {
+                  {filteredDisputes.map((dispute) => {
                     const statusBadge = getStatusBadge(dispute.status);
                     return (
-                      <TableRow key={dispute.id}>
+                      <TableRow
+                        key={dispute.id}
+                        onClick={() => router.push(`/ticket/${dispute.id}`)}
+                        className="cursor-pointer hover:bg-slate-50 transition-colors group"
+                      >
                         <TableCell className="font-medium">#{dispute.id}</TableCell>
                         <TableCell>{dispute.customer_name}</TableCell>
                         <TableCell className="max-w-md truncate">
@@ -266,7 +336,7 @@ export default function DashboardPage() {
                         </TableCell>
                         <TableCell>${dispute.amount.toFixed(2)}</TableCell>
                         <TableCell>
-                          <Badge 
+                          <Badge
                             variant={statusBadge.variant}
                             className={statusBadge.className}
                           >
@@ -275,8 +345,8 @@ export default function DashboardPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <Link href={`/ticket/${dispute.id}`}>
-                            <Button variant="outline" size="sm">
-                              View Details
+                            <Button variant="ghost" size="sm" className="hover:bg-blue-50 hover:text-blue-700 font-semibold transition-colors">
+                              Review Ticket →
                             </Button>
                           </Link>
                         </TableCell>
@@ -289,51 +359,7 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
-
-
-      {/* Summary Stats */}
-      {!loading && !error && disputes.length > 0 && (
-        <div className="grid gap-4 md:grid-cols-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium">Total Disputes</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{disputes.length}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium">Auto Approved</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">
-                {disputes.filter(d => d.status === "auto_approved").length}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium">Auto Rejected</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-600">
-                {disputes.filter(d => d.status === "auto_rejected").length}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium">Needs Review</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-yellow-600">
-                {disputes.filter(d => d.status === "human_review_required").length}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      </div>
     </div>
   );
 }

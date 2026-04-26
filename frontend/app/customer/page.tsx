@@ -1068,7 +1068,7 @@ export default function CustomerPortalPage() {
                             setIsDisputeModalOpen(true); // Auto-open the form when selected
                           }
                         }}
-                        className="w-full rounded-xl border border-slate-200 bg-zinc-50 px-4 py-4 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 cursor-pointer"
+                        className="w-full rounded-xl border border-slate-200 bg-zinc-50 px-4 py-4 text-base text-slate-900 shadow-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 cursor-pointer"
                         disabled={transactionsLoading || transactions.length === 0}
                       >
                         <option value="">
@@ -1238,7 +1238,7 @@ export default function CustomerPortalPage() {
                                   setExpectedAmount("");
                                   setChargedAmount("");
                                 }}
-                                className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                                className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                                 disabled={!selectedTransactionId}
                               >
                                 <option value="">Select dispute type...</option>
@@ -1265,7 +1265,7 @@ export default function CustomerPortalPage() {
                                     value={loanAccountNumber}
                                     onChange={(e) => setLoanAccountNumber(e.target.value)}
                                     placeholder="e.g., LOAN123456789"
-                                    className="bg-white"
+                                    className="bg-white text-base"
                                   />
                                 </div>
                                 <div className="space-y-2">
@@ -1277,7 +1277,7 @@ export default function CustomerPortalPage() {
                                     value={emiAmount}
                                     onChange={(e) => setEmiAmount(e.target.value)}
                                     placeholder="e.g., 500.00"
-                                    className="bg-white"
+                                    className="bg-white text-base"
                                   />
                                 </div>
                               </div>
@@ -1294,7 +1294,7 @@ export default function CustomerPortalPage() {
                                     value={atmLocation}
                                     onChange={(e) => setAtmLocation(e.target.value)}
                                     placeholder="e.g., Main Street Branch, Downtown"
-                                    className="bg-white"
+                                    className="bg-white text-base"
                                   />
                                 </div>
                                 <div className="space-y-2">
@@ -1306,7 +1306,7 @@ export default function CustomerPortalPage() {
                                     value={atmWithdrawalAmount}
                                     onChange={(e) => setAtmWithdrawalAmount(e.target.value)}
                                     placeholder="e.g., 200.00"
-                                    className="bg-white"
+                                    className="bg-white text-base"
                                   />
                                 </div>
                               </div>
@@ -1329,7 +1329,7 @@ export default function CustomerPortalPage() {
                                         value={expectedAmount}
                                         onChange={(e) => setExpectedAmount(e.target.value)}
                                         placeholder="e.g., 50.00"
-                                        className="bg-white"
+                                        className="bg-white text-base"
                                       />
                                     </div>
                                     <div className="space-y-2">
@@ -1341,7 +1341,7 @@ export default function CustomerPortalPage() {
                                         value={chargedAmount}
                                         onChange={(e) => setChargedAmount(e.target.value)}
                                         placeholder="e.g., 75.00"
-                                        className="bg-white"
+                                        className="bg-white text-base"
                                       />
                                     </div>
                                   </>
@@ -1352,7 +1352,7 @@ export default function CustomerPortalPage() {
                                   <div className="flex items-center gap-2">
                                     <label
                                       htmlFor="merchantReceipt"
-                                      className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 transition hover:bg-slate-50"
+                                      className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-700 transition hover:bg-slate-50"
                                     >
                                       <Upload className="h-4 w-4" />
                                       {merchantReceipt ? "Change File" : "Upload Receipt"}
@@ -1392,7 +1392,7 @@ export default function CustomerPortalPage() {
                                     value={disputeReason}
                                     onChange={(e) => setDisputeReason(e.target.value)}
                                     placeholder="Provide a brief summary of the issue..."
-                                    className="min-h-[100px] w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                                    className="min-h-[100px] w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                                     required
                                   />
                                   {descriptionSuggestions.length > 0 && !disputeReason.trim() && (
