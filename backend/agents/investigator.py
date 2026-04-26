@@ -5,7 +5,7 @@ This module contains the investigator agent that gathers evidence using a
 dynamic ReAct-style tool plan with optional LLM guidance and rule-based fallback.
 """
 
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
 import json
 from loguru import logger
 from datetime import datetime
@@ -76,6 +76,7 @@ def investigator_node(state: DisputeState) -> Dict[str, Any]:
             customer_query=state["customer_query"],
             working_memory=working_memory,
             prior_gathered_data=gathered_data,
+            receipt_image_base64=state.get("receipt_image_base64"),
         )
 
         logger.info(
@@ -212,6 +213,7 @@ def _build_investigation_plan(
     customer_query: str,
     working_memory: Dict[str, Any],
     prior_gathered_data: Dict[str, Any],
+    receipt_image_base64: Optional[str] = None,
 ) -> Tuple[List[Dict[str, Any]], str]:
     """
     Build a dynamic investigation plan using LLM-powered reasoning.
@@ -272,12 +274,18 @@ AVAILABLE TOOLS:
 8. initiate_chargeback - Initiates a chargeback with the card network
    Use when: 'merchant_dispute'. Pass a summary of the issue as 'reason' in the input.
 
+9. analyze_receipt_evidence - Analyzes a Base64 receipt image using Vision OCR to extract merchant name and charged amount
+   Use when: Customer claims 'incorrect_amount' AND a receipt image is available (receipt_image_base64 exists in state).
+   CRITICAL: If the customer claims an incorrect amount and the state contains receipt_image_base64, you MUST use this tool to extract the printed amount and compare it against the ledger amount before making a recommendation.
+   Input: {{"receipt_base64": "<base64_string>", "expected_merchant": "<merchant_name>"}}
+
 INVESTIGATION STRATEGY:
 - Start with transaction_details if not already available
 - Choose tools that directly address the dispute category
 - Consider customer query for additional context clues
 - Avoid redundant tool calls (check prior_data_keys)
 - Plan 2-4 tools maximum for efficiency
+- IMPORTANT: If receipt_image_base64 is present in the state and the dispute is about incorrect_amount, you MUST include analyze_receipt_evidence in your plan
 
 Return ONLY valid JSON:
 {{
@@ -304,6 +312,7 @@ DISPUTE DETAILS:
 CONTEXT:
 - Already Gathered Data: {prior_keys}
 - Working Memory: {working_memory}
+- Receipt Image Available: {receipt_available}
 
 Create an intelligent investigation plan with reasoning:""")
         ])
@@ -316,6 +325,7 @@ Create an intelligent investigation plan with reasoning:""")
             query=customer_query,
             working_memory=json.dumps(working_memory, default=str),
             prior_keys=list(prior_gathered_data.keys()) if prior_gathered_data else ["none"],
+            receipt_available="Yes" if receipt_image_base64 else "No",
         ))
 
         content = response.content if isinstance(response.content, str) else json.dumps(response.content)
@@ -337,7 +347,7 @@ Create an intelligent investigation plan with reasoning:""")
         logger.info(f"[INVESTIGATOR AGENT] llm_planned_steps={len(steps)}")
         
         # Sanitize and validate the plan
-        sanitized = _sanitize_plan(steps, customer_id, transaction_id, prior_gathered_data)
+        sanitized = _sanitize_plan(steps, customer_id, transaction_id, prior_gathered_data, receipt_image_base64)
         
         if sanitized:
             logger.info(f"Using LLM investigation plan with {len(sanitized)} steps")
@@ -420,6 +430,7 @@ def _sanitize_plan(
     customer_id: int,
     transaction_id: int,
     prior_gathered_data: Dict[str, Any],
+    receipt_image_base64: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     allowed = {
         "get_transaction_details": "transaction_details",
@@ -430,6 +441,7 @@ def _sanitize_plan(
         "check_merchant_refund_status": "refund_status",
         "verify_receipt_amount": "receipt_verification",
         "initiate_chargeback": "chargeback_status",
+        "analyze_receipt_evidence": "receipt_analysis",
     }
 
     sanitized: List[Dict[str, Any]] = []
@@ -457,6 +469,12 @@ def _sanitize_plan(
             tool_input = {"transaction_id": transaction_id, "claimed_amount": tool_input.get("claimed_amount", 0.0)}
         elif tool_name == "initiate_chargeback":
             tool_input = {"transaction_id": transaction_id, "reason": tool_input.get("reason", "customer_dispute")}
+        elif tool_name == "analyze_receipt_evidence":
+            # Use the receipt_image_base64 from state if available
+            tool_input = {
+                "receipt_base64": receipt_image_base64 or tool_input.get("receipt_base64", ""),
+                "expected_merchant": tool_input.get("expected_merchant", "")
+            }
 
         if data_key == "transaction_details" and "transaction_details" in prior_gathered_data:
             continue
@@ -503,6 +521,14 @@ def _execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
         return banking_tools.verify_receipt_amount(tool_input["transaction_id"], tool_input.get("claimed_amount", 0.0))
     if tool_name == "initiate_chargeback":
         return banking_tools.initiate_chargeback(tool_input["transaction_id"], tool_input.get("reason", "customer_dispute"))
+    if tool_name == "analyze_receipt_evidence":
+        result_str = banking_tools.analyze_receipt_evidence(
+            tool_input.get("receipt_base64", ""),
+            tool_input.get("expected_merchant", "")
+        )
+        # Parse the JSON string returned by analyze_receipt_evidence
+        import json
+        return json.loads(result_str)
     return {"error": f"Unsupported tool: {tool_name}"}
 
 

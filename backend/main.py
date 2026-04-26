@@ -921,13 +921,15 @@ class DisputeProcessRequest(BaseModel):
     transaction_id: int
     customer_id: int
     customer_query: str
+    receipt_image_base64: Optional[str] = None
 
     class Config:
         json_schema_extra = {
             "example": {
                 "transaction_id": 5,
                 "customer_id": 1,
-                "customer_query": "ATM did not dispense cash but my account was debited. ATM showed error message."
+                "customer_query": "ATM did not dispense cash but my account was debited. ATM showed error message.",
+                "receipt_image_base64": None
             }
         }
 
@@ -1002,6 +1004,10 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
             customer_query=request.customer_query,
             dispute_category="unknown"
         )
+        
+        # Add receipt image if provided
+        if request.receipt_image_base64:
+            initial_state["receipt_image_base64"] = request.receipt_image_base64
         
         # Stream through the LangGraph workflow and watch agents think
         final_state: Optional[DisputeState] = None

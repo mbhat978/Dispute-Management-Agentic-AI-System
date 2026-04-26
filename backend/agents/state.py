@@ -35,6 +35,7 @@ class DisputeState(TypedDict):
         gathered_data (dict): Dictionary storing outputs from various tool calls
         audit_trail (list[str]): List of agent thoughts, actions, and observations for transparency
         final_decision (str): The final resolution decision (e.g., 'auto_approved', 'auto_rejected', 'human_review_required')
+        receipt_image_base64 (str, optional): Base64-encoded receipt image for visual evidence analysis
     
     Enhanced ReAct Attributes:
         triage_confidence (float): Confidence score from triage classification (0.0-1.0)
@@ -64,6 +65,9 @@ class DisputeState(TypedDict):
     
     # Human-in-the-loop override field
     human_override: NotRequired[str | None]
+    
+    # Receipt image field (optional)
+    receipt_image_base64: NotRequired[str | None]
     
     # Enhanced ReAct fields (optional with NotRequired)
     triage_confidence: NotRequired[float]

@@ -9,6 +9,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+// Helper function to convert file to Base64
+const convertFileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = (error) => reject(error);
+  });
+};
+
 
 interface Customer {
   id: number;
@@ -835,6 +845,19 @@ export default function CustomerPortalPage() {
       setShowDecisionModal(false);
       setActiveStreamTicketId(null); // Reset to allow the feed to listen to the new dispute
 
+      // Convert receipt file to Base64 if present
+      let receiptBase64 = null;
+      if (merchantReceipt) {
+        try {
+          receiptBase64 = await convertFileToBase64(merchantReceipt);
+        } catch (e) {
+          console.error("Failed to convert receipt to Base64", e);
+          setError("Failed to process the uploaded receipt image.");
+          setSubmitLoading(false);
+          return;
+        }
+      }
+
       const response = await fetch(`${API_BASE_URL}/api/disputes/process`, {
         method: "POST",
         headers: {
@@ -844,6 +867,7 @@ export default function CustomerPortalPage() {
           transaction_id: Number(selectedTransactionId),
           customer_id: Number(selectedCustomerId),
           customer_query: comprehensiveQuery,
+          receipt_image_base64: receiptBase64,
         }),
       });
 
@@ -1024,7 +1048,7 @@ export default function CustomerPortalPage() {
                   </Button>
                   
                   <div className="text-center mt-4">
-                    <p className="text-xs text-slate-400">Demo Helper: Use ID <strong>4</strong> (Emily) or <strong>5</strong> (Michael)</p>
+                    <p className="text-xs text-slate-400">Demo Helper: Use ID <strong>1 through 5</strong></p>
                   </div>
                 </form>
               </div>

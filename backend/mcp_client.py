@@ -304,6 +304,26 @@ def initiate_chargeback(transaction_id: int, reason: str) -> Dict[str, Any]:
     })
 
 
+def analyze_receipt_evidence(receipt_base64: str, expected_merchant: str) -> str:
+    """
+    Analyzes a Base64 receipt image to extract the actual charged amount and merchant name.
+    Use this tool whenever a customer uploads a receipt to verify 'incorrect_amount' claims.
+
+    Args:
+        receipt_base64 (str): Base64-encoded receipt image data.
+        expected_merchant (str): The merchant name from the transaction record for comparison.
+
+    Returns:
+        str: JSON string containing extracted merchant, amount, legibility, and fraud indicators.
+    """
+    result = call_mcp_tool('analyze_receipt_evidence_tool', {
+        'receipt_base64': receipt_base64,
+        'expected_merchant': expected_merchant,
+    })
+    # Return as JSON string to match the banking_tools.py interface
+    return json.dumps(result)
+
+
 # Helper function for agent introspection
 def get_available_tools() -> list:
     """
@@ -360,6 +380,10 @@ def get_available_tools() -> list:
         {
             "name": "initiate_chargeback",
             "description": "Initiate a chargeback with the card network for merchant disputes"
+        },
+        {
+            "name": "analyze_receipt_evidence",
+            "description": "Analyze a Base64 receipt image to extract charged amount and merchant name for 'incorrect_amount' disputes"
         }
     ]
     return tools

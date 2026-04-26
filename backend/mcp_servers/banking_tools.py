@@ -11,10 +11,18 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, cast
 from sqlalchemy.orm import Session
+import json
+from langchain_core.messages import HumanMessage
+from langchain_openai import ChatOpenAI
+from dotenv import load_dotenv
 
 # Add the backend directory to the Python path
 backend_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(backend_dir))
+
+# Navigate up from the backend directory to the project root to find .env
+root_dir = backend_dir.parent
+load_dotenv(root_dir / '.env')
 
 from database import SessionLocal
 import models
@@ -836,6 +844,87 @@ def initiate_chargeback(transaction_id: int, reason: str) -> Dict[str, Any]:
     }
 
 
+async def analyze_receipt_evidence(receipt_base64: str, expected_merchant: str) -> str:
+    """
+    Analyzes a Base64 receipt image using GPT-4o Vision to extract the actual charged amount and merchant name.
+    Use this tool whenever a customer uploads a receipt to verify 'incorrect_amount' or 'merchant_dispute' claims.
+    
+    Args:
+        receipt_base64 (str): Base64-encoded receipt image data.
+        expected_merchant (str): The merchant name from the transaction record for comparison.
+        
+    Returns:
+        str: JSON string containing:
+            - extracted_merchant: Merchant name extracted from receipt
+            - extracted_amount: Amount extracted from receipt
+            - receipt_legibility: Quality of the receipt image (High/Medium/Low)
+            - fraud_indicators_found: Boolean indicating if fraud indicators were detected
+            - note: Additional notes about the receipt analysis
+            - error: Error message if receipt is invalid
+            
+    Example:
+        >>> result = await analyze_receipt_evidence("base64_image_data...", "Coffee Shop")
+        >>> parsed = json.loads(result)
+        >>> print(parsed['extracted_merchant'])
+        Coffee Shop
+    """
+    if not receipt_base64:
+        return json.dumps({"error": "No receipt image provided."})
+        
+    try:
+        # Format the string for OpenAI Vision API (ensure it has the data URI scheme)
+        image_url = receipt_base64
+        if not image_url.startswith("data:image"):
+            image_url = f"data:image/jpeg;base64,{receipt_base64}"
+            
+        # Initialize GPT-4o with temperature 0 for strictly analytical extraction
+        llm = ChatOpenAI(model="gpt-4o", temperature=0)
+        
+        prompt_text = f"""
+        You are a forensic financial AI. Analyze this receipt image.
+        The customer claims the transaction was with '{expected_merchant}'.
+        
+        Extract the actual merchant name printed on the receipt and the final total charged amount.
+        Look for any signs of tampering or inconsistencies.
+        
+        You MUST return ONLY a valid JSON object (do not include markdown formatting or ```json wrappers).
+        Use this exact JSON schema:
+        {{
+            "extracted_merchant": "string",
+            "extracted_amount": "number or string",
+            "receipt_legibility": "High" | "Medium" | "Low",
+            "fraud_indicators_found": boolean,
+            "note": "brief explanation of your findings, including if the amount matches or differs wildly"
+        }}
+        """
+        
+        message = HumanMessage(
+            content=[
+                {"type": "text", "text": prompt_text},
+                {"type": "image_url", "image_url": {"url": image_url}}
+            ]
+        )
+        
+        # Execute the vision model call
+        response = await llm.ainvoke([message])
+        
+        # Clean up potential markdown formatting from the response
+        content_str = str(response.content) if not isinstance(response.content, str) else response.content
+        cleaned_content = content_str.replace("```json", "").replace("```", "").strip()
+        
+        # Verify it's valid JSON before returning to the Investigator agent
+        parsed_json = json.loads(cleaned_content)
+        return json.dumps(parsed_json)
+        
+    except Exception as e:
+        # Graceful fallback that forces a human review if the AI fails to read the image
+        return json.dumps({
+            "error": f"Vision analysis failed: {str(e)}",
+            "fraud_indicators_found": True,
+            "note": "Failed to process receipt image. Manual human review of the evidence is required."
+        })
+
+
 # Helper function to get all available tools for agent introspection
 def get_available_tools() -> List[Dict[str, str]]:
     """
@@ -898,6 +987,10 @@ def get_available_tools() -> List[Dict[str, str]]:
         {
             "name": "initiate_chargeback",
             "description": "Initiate a chargeback with card network (Visa/Mastercard) for merchant disputes"
+        },
+        {
+            "name": "analyze_receipt_evidence",
+            "description": "Analyze a Base64 receipt image to extract charged amount and merchant name for 'incorrect_amount' disputes"
         }
     ]
     return tools

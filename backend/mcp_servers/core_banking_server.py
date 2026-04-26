@@ -16,7 +16,8 @@ from banking_tools import (
     get_loan_details,
     check_merchant_refund_status,
     verify_receipt_amount,
-    initiate_chargeback
+    initiate_chargeback,
+    analyze_receipt_evidence
 )
 
 
@@ -211,6 +212,24 @@ def initiate_chargeback_tool(transaction_id: int, reason: str) -> dict:
         Dictionary containing chargeback status and confirmation message
     """
     return initiate_chargeback(transaction_id, reason)
+
+
+@mcp.tool()
+async def analyze_receipt_evidence_tool(receipt_base64: str, expected_merchant: str) -> dict:
+    """
+    Analyzes a Base64 receipt image using GPT-4o Vision to extract the actual charged amount and merchant name.
+    Use this tool whenever a customer uploads a receipt to verify 'incorrect_amount' or 'merchant_dispute' claims.
+    
+    Args:
+        receipt_base64: Base64-encoded receipt image data
+        expected_merchant: The merchant name from the transaction record for comparison
+        
+    Returns:
+        Dictionary containing extracted merchant, amount, legibility, and fraud indicators
+    """
+    import json
+    result_str = await analyze_receipt_evidence(receipt_base64, expected_merchant)
+    return json.loads(result_str)
 
 
 if __name__ == "__main__":

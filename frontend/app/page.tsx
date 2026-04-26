@@ -18,11 +18,12 @@ export default function HomePage() {
     e.preventDefault();
     
     if (loginType === "retail") {
-      if (loginId === "4" || loginId === "5") {
+      // Allow any valid seeded customer ID from 1 to 5
+      if (["1", "2", "3", "4", "5"].includes(loginId)) {
         localStorage.setItem("banking_session", loginId);
         router.push("/customer");
       } else {
-        setLoginError("Invalid Account ID or Password. Please try again.");
+        setLoginError("Invalid Account ID. Please use a valid Demo ID (1-5).");
       }
     } else {
       // Employee login simulation
@@ -133,8 +134,8 @@ export default function HomePage() {
             
             <div className="text-center mt-4">
               <p className="text-xs text-slate-400">
-                {loginType === "retail" 
-                  ? <>Demo Access: Use ID <strong>4</strong> or <strong>5</strong> with any password.</>
+                {loginType === "retail"
+                  ? <>Demo Access: Use ID <strong>1 through 5</strong> with any password.</>
                   : <>Demo Access: Use ID <strong>admin</strong> with any password.</>
                 }
               </p>
