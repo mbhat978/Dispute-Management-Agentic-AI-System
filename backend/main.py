@@ -371,20 +371,27 @@ async def get_customers(db: Session = Depends(get_db)):
     try:
         customers = db.query(models.Customer).order_by(models.Customer.name.asc()).all()
 
+        customer_list = []
+        for customer in customers:
+            try:
+                inactive = json.loads(getattr(customer, "inactive_cards", "[]") or "[]")
+            except Exception:
+                inactive = []
+                
+            customer_list.append({
+                "id": customer.id,
+                "name": customer.name,
+                "account_tier": customer.account_tier,
+                "current_account_balance": customer.current_account_balance,
+                "card_number": getattr(customer, "card_number", "**** **** **** 1234"),
+                "card_status": getattr(customer, "card_status", "Active"),
+                "inactive_cards": inactive
+            })
+
         return {
             "status": "success",
             "count": len(customers),
-            "customers": [
-                {
-                    "id": customer.id,
-                    "name": customer.name,
-                    "account_tier": customer.account_tier,
-                    "current_account_balance": customer.current_account_balance,
-                    "card_number": getattr(customer, "card_number", "**** **** **** 1234"),
-                    "card_status": getattr(customer, "card_status", "Active")
-                }
-                for customer in customers
-            ],
+            "customers": customer_list,
         }
     except Exception as e:
         logger.exception("Error fetching customers: {}", str(e))

@@ -432,6 +432,22 @@ def issue_replacement_card(customer_id: int, expedited_shipping: bool = True) ->
             return json.dumps({"error": f"Customer ID {customer_id} not found."})
         
         import random
+        
+        # Archive the old card before replacing it
+        if getattr(customer, "card_number", None):
+            try:
+                inactive_cards_str = getattr(customer, "inactive_cards", "[]") or "[]"
+                inactive = json.loads(inactive_cards_str)
+            except Exception:
+                inactive = []
+                
+            inactive.append({
+                "card_number": customer.card_number,
+                "status": "Blocked",
+                "blocked_on": datetime.utcnow().strftime("%Y-%m-%d")
+            })
+            setattr(customer, "inactive_cards", json.dumps(inactive))
+
         # Generate a new random last 4 digits
         new_last_4 = str(random.randint(1000, 9999))
         new_card_number = f"**** **** **** {new_last_4}"

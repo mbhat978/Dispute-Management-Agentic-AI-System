@@ -20,6 +20,12 @@ const convertFileToBase64 = (file: File): Promise<string> => {
 };
 
 
+interface InactiveCard {
+  card_number: string;
+  status: string;
+  blocked_on: string;
+}
+
 interface Customer {
   id: number;
   name: string;
@@ -27,6 +33,7 @@ interface Customer {
   current_account_balance: number;
   card_number?: string;
   card_status?: string;
+  inactive_cards?: InactiveCard[];
 }
 
 interface Transaction {
@@ -1085,6 +1092,25 @@ export default function CustomerPortalPage() {
                       <p className="font-mono text-xl tracking-[0.15em] text-slate-200">{selectedCustomer?.card_number || '**** **** **** 1234'}</p>
                     </div>
                   </div>
+                  
+                  {selectedCustomer?.inactive_cards && selectedCustomer.inactive_cards.length > 0 && (
+                    <div className="mt-8 border-t border-white/10 pt-6">
+                      <p className="text-xs font-medium text-slate-400 mb-3 uppercase tracking-wider">Archived / Blocked Cards</p>
+                      <div className="space-y-2">
+                        {selectedCustomer.inactive_cards.map((c, idx) => (
+                          <div key={idx} className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 bg-white/8 border border-white/15 backdrop-blur-md rounded-xl px-4 py-3 transition-colors hover:bg-white/15">
+                            <p className="font-mono text-sm font-medium text-slate-300 line-through opacity-60">{c.card_number}</p>
+                            <div className="flex items-center gap-3">
+                              <span className="text-xs font-medium text-slate-400">Blocked: {c.blocked_on}</span>
+                              <Badge className="bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider shadow-sm">
+                                🔒 {c.status}
+                              </Badge>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

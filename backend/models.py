@@ -34,6 +34,7 @@ class Customer(Base):
     current_account_balance: Mapped[float] = mapped_column(Float, nullable=False)
     card_number: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, default="**** **** **** 1234")
     card_status: Mapped[str] = mapped_column(String(20), nullable=False, default="Active")  # 'Active', 'Blocked'
+    inactive_cards = Column(Text, nullable=True, default="[]")  # JSON list of old cards
 
     # Relationships
     transactions = relationship("Transaction", back_populates="customer")

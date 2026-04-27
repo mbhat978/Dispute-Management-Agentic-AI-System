@@ -10,6 +10,7 @@ sse-starlette
 langgraph
 langchain
 langchain-openai
+langgraph-checkpoint-sqlite
 langchain-core
 langsmith
 openai<2
