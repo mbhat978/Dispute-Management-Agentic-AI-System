@@ -305,20 +305,24 @@ def verify_receipt_amount(transaction_id: int, claimed_amount: float) -> Dict[st
     })
 
 
-def initiate_chargeback(transaction_id: int, reason: str) -> Dict[str, Any]:
+def initiate_chargeback(transaction_id: int, chargeback_amount: float, network_reason_code: str, notes: str) -> Dict[str, Any]:
     """
     Initiate a chargeback with the card network for merchant disputes.
 
     Args:
         transaction_id (int): The unique identifier of the transaction.
-        reason (str): The chargeback reason.
+        chargeback_amount (float): The amount to claim from the merchant.
+        network_reason_code (str): The Visa/Mastercard reason code.
+        notes (str): Additional notes about the chargeback.
 
     Returns:
         Dict[str, Any]: Chargeback initiation result and status.
     """
     return call_mcp_tool('initiate_chargeback_tool', {
         'transaction_id': transaction_id,
-        'reason': reason,
+        'chargeback_amount': chargeback_amount,
+        'network_reason_code': network_reason_code,
+        'notes': notes
     })
 
 

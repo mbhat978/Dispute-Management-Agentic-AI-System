@@ -214,23 +214,22 @@ def verify_receipt_amount_tool(transaction_id: int, claimed_amount: float) -> di
 
 
 @mcp.tool()
-def initiate_chargeback_tool(transaction_id: int, reason: str) -> dict:
+def initiate_chargeback_tool(transaction_id: int, chargeback_amount: float, network_reason_code: str, notes: str) -> dict:
     """
     Initiate a chargeback with the card network (Visa/Mastercard).
     
-    This tool simulates filing a chargeback with the card network for
-    merchant disputes. Useful when merchants are unresponsive or when
-    goods/services were not provided as promised.
-    
     Args:
         transaction_id: The unique identifier of the transaction
-        reason: The reason for the chargeback (e.g., "goods_not_provided",
-                "merchant_unresponsive", "defective_merchandise")
+        chargeback_amount: The monetary amount to claim
+        network_reason_code: The official network dispute reason code (e.g., 10.4)
+        notes: Details regarding the dispute
         
     Returns:
         Dictionary containing chargeback status and confirmation message
     """
-    return initiate_chargeback(transaction_id, reason)
+    import json
+    result = initiate_chargeback(transaction_id, chargeback_amount, network_reason_code, notes)
+    return json.loads(result) if isinstance(result, str) else result
 
 
 @mcp.tool()

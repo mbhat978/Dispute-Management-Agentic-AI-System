@@ -666,6 +666,10 @@ def _execute_decision_actions(
             logger.info(f"[DECISION AGENT] Full refund initiated: ${amount} for transaction {transaction_id}")
             actions_taken.append(f"💰 REFUNDED: Full amount of ${amount} credited back.")
             
+            banking_tools.initiate_chargeback(transaction_id, amount, "10.4", "Fraud - Card Absent Environment")
+            logger.info(f"[DECISION AGENT] Network chargeback submitted for fraud: {transaction_id}")
+            actions_taken.append(f"⚖️ CHARGEBACK: Network claim filed (Visa Code 10.4) to recover ${amount} from merchant.")
+            
         elif category == "incorrect_amount":
             receipt_data = gathered_data.get("receipt_verification", {})
             partial_amount = receipt_data.get("discrepancy_amount")
@@ -673,14 +677,28 @@ def _execute_decision_actions(
                 banking_tools.initiate_refund(transaction_id, partial_amount, "Incorrect amount partial refund")
                 logger.info(f"[DECISION AGENT] Partial refund initiated: ${partial_amount} for transaction {transaction_id}")
                 actions_taken.append(f"💰 REFUNDED: Partial amount of ${partial_amount} credited back.")
+                
+                banking_tools.initiate_chargeback(transaction_id, partial_amount, "12.5", "Incorrect Amount")
+                logger.info(f"[DECISION AGENT] Partial network chargeback submitted: {transaction_id}")
+                actions_taken.append(f"⚖️ CHARGEBACK: Network claim filed (Visa Code 12.5) to recover ${partial_amount} from merchant.")
             else:
                 banking_tools.initiate_refund(transaction_id, amount, "Incorrect amount dispute approved")
                 actions_taken.append(f"💰 REFUNDED: Full amount of ${amount} credited back.")
+                
+                banking_tools.initiate_chargeback(transaction_id, amount, "12.5", "Incorrect Amount")
+                actions_taken.append(f"⚖️ CHARGEBACK: Network claim filed (Visa Code 12.5) to recover ${amount} from merchant.")
                 
         elif category in {"atm_failure", "duplicate", "failed_transaction"}:
             banking_tools.initiate_refund(transaction_id, amount, f"{category} dispute approved")
             logger.info(f"[DECISION AGENT] Full refund initiated: ${amount} for {category} transaction {transaction_id}")
             actions_taken.append(f"💰 REFUNDED: Full amount of ${amount} credited back.")
+            
+            if category == "duplicate":
+                banking_tools.initiate_chargeback(transaction_id, amount, "12.6", "Duplicate Processing")
+                actions_taken.append(f"⚖️ CHARGEBACK: Network claim filed (Visa Code 12.6) to recover ${amount} from merchant.")
+            elif category == "failed_transaction":
+                banking_tools.initiate_chargeback(transaction_id, amount, "11.1", "Cardholder charge not authorized")
+                actions_taken.append(f"⚖️ CHARGEBACK: Network claim filed to recover ${amount} from merchant.")
             
     elif final_decision == "human_review_required":
         banking_tools.route_to_human(ticket_id, escalation_summary)

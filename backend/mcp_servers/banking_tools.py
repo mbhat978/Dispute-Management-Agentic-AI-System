@@ -864,38 +864,31 @@ def verify_receipt_amount(transaction_id: int, claimed_amount: float) -> Dict[st
         db.close()
 
 
-def initiate_chargeback(transaction_id: int, reason: str) -> Dict[str, Any]:
+def initiate_chargeback(transaction_id: int, chargeback_amount: float, network_reason_code: str, notes: str) -> str:
     """
-    Initiate a chargeback with the card network (Visa/Mastercard).
-    
-    This function simulates filing a chargeback with the card network for
-    merchant disputes. It's useful when merchants are unresponsive or when
-    goods/services were not provided as promised.
-    
-    Args:
-        transaction_id (int): The unique identifier of the transaction.
-        reason (str): The reason for the chargeback (e.g., "goods_not_provided",
-                     "merchant_unresponsive", "defective_merchandise").
+    Submits a formal chargeback claim to the card network (Visa/Mastercard) to recover funds from the merchant.
+    Should be called AFTER a customer refund is approved for fraud, merchant disputes, or processing errors.
+    """
+    db = SessionLocal()
+    try:
+        transaction = db.query(models.Transaction).filter(models.Transaction.id == transaction_id).first()
+        if not transaction:
+            return json.dumps({"error": f"Transaction ID {transaction_id} not found."})
         
-    Returns:
-        Dict[str, Any]: A dictionary containing:
-            - transaction_id: Transaction ID
-            - chargeback_status: Status of the chargeback ("initiated")
-            - network_reason_code: Card network reason code
-            - message: Human-readable confirmation message
-            
-    Example:
-        >>> result = initiate_chargeback(5, "goods_not_provided")
-        >>> print(result['message'])
-        Chargeback initiated with card network for reason: goods_not_provided. Provisional credit may be applied.
-    """
-    # Simulates filing a chargeback with Visa/Mastercard network
-    return {
-        "transaction_id": transaction_id,
-        "chargeback_status": "initiated",
-        "network_reason_code": "goods_not_provided",
-        "message": f"Chargeback initiated with card network for reason: {reason}. Provisional credit may be applied."
-    }
+        # In a real system, this would make an API call to Visa VROL or Mastercard MasterCom
+        network_ref_id = f"CB-{datetime.utcnow().strftime('%Y%m%d')}-{transaction_id}-{network_reason_code}"
+        
+        return json.dumps({
+            "status": "chargeback_submitted",
+            "transaction_id": transaction_id,
+            "merchant": transaction.merchant_name,
+            "claim_amount": chargeback_amount,
+            "network_reference": network_ref_id,
+            "reason_code": network_reason_code,
+            "message": f"Successfully submitted ${chargeback_amount} chargeback to network against {transaction.merchant_name} (Code: {network_reason_code})."
+        })
+    finally:
+        db.close()
 
 
 async def analyze_receipt_evidence(receipt_base64: str, expected_merchant: str) -> str:
