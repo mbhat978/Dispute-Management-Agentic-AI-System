@@ -25,6 +25,19 @@ except ImportError as e:
         f"Ensure mcp_client.py exists in backend/. Error: {e}"
     )
 
+# Import fraud detection modules
+try:
+    from agents.fraud_scorer import calculate_fraud_risk_score
+    from utils.dispute_fraud_detector import detect_dispute_fraud
+except ImportError:
+    try:
+        from fraud_scorer import calculate_fraud_risk_score
+        from utils.dispute_fraud_detector import detect_dispute_fraud
+    except ImportError:
+        # Fallback - will be imported when needed
+        calculate_fraud_risk_score = None
+        detect_dispute_fraud = None
+
 
 # ============================================================================
 # TOOL WRAPPERS FOR LANGCHAIN
@@ -334,6 +347,125 @@ def query_compliance_policy_tool(query: str) -> Dict[str, Any]:
 # TOOL LIST FOR AGENT CONFIGURATION
 # ============================================================================
 
+@tool
+def calculate_fraud_risk_score_tool(transaction_id: int, customer_id: int) -> Dict[str, Any]:
+    """
+    **CRITICAL FOR FRAUD DISPUTES - MUST BE CALLED FOR ALL FRAUD/FRAUDULENT_TRANSACTION DISPUTES**
+    
+    Calculate comprehensive fraud risk score (0-100) using 5-factor analysis:
+    1. Velocity Risk: Checks if customer has >3 transactions in the last hour
+    2. Amount Anomaly: Compares transaction amount to customer's average (2x-5x = suspicious)
+    3. Geographic Risk: Detects first-time international transactions
+    4. Time Risk: Identifies transactions at unusual hours (2am-5am)
+    5. Merchant Risk: Flags high-risk merchant categories (gambling, crypto, etc.)
+    
+    **This tool MUST be called for every fraud dispute to provide quantitative fraud assessment.**
+    
+    Args:
+        transaction_id (int): The transaction being disputed
+        customer_id (int): The customer filing the dispute
+        
+    Returns:
+        Dict containing:
+        - fraud_risk_score (int): Overall score 0-100 (0=safe, 100=definite fraud)
+        - risk_level (str): LOW (<30), MEDIUM (30-70), HIGH (>70)
+        - factors (dict): Breakdown of each risk factor score
+        - recommendation (str): Action recommendation based on score
+        
+    Example:
+        calculate_fraud_risk_score_tool(transaction_id=1, customer_id=1)
+        
+    Decision Logic:
+        - Score >70 (HIGH): Strong fraud indicators → Auto-approve refund + block card
+        - Score 30-70 (MEDIUM): Some concerns → Investigate further or route to human
+        - Score <30 (LOW): Likely legitimate → Deny or investigate other factors
+    """
+    # Fetch required data
+    transaction_details = banking_tools.get_transaction_details(transaction_id)
+    customer_history_data = banking_tools.get_customer_history(customer_id, limit=10)
+    
+    # Prepare data for fraud scorer
+    transaction = {
+        "transaction_id": transaction_id,
+        "customer_id": customer_id,
+        "amount": transaction_details.get("amount", 0),
+        "merchant_name": transaction_details.get("merchant_name", ""),
+        "is_international": transaction_details.get("is_international", False),
+        "transaction_date": transaction_details.get("transaction_date", ""),
+        "status": transaction_details.get("status", "")
+    }
+    
+    # IMPORTANT: Exclude the disputed transaction from history analysis
+    # This prevents the fraud scorer from seeing the disputed transaction as part of
+    # the customer's normal transaction pattern, which would skew risk assessment
+    all_transactions = customer_history_data.get("transactions", [])
+    customer_history = [
+        t for t in all_transactions
+        if t.get("transaction_id") != transaction_id
+    ]
+    
+    customer_profile = {
+        "customer_id": customer_id,
+        "customer_name": customer_history_data.get("customer_name", ""),
+        "account_tier": customer_history_data.get("account_tier", ""),
+        "current_account_balance": customer_history_data.get("current_account_balance", 0)
+    }
+    
+    # Call fraud scorer
+    from agents.fraud_scorer import calculate_fraud_risk_score
+    return calculate_fraud_risk_score(transaction, customer_history, customer_profile)
+
+
+@tool
+def detect_dispute_fraud_tool(customer_id: int) -> Dict[str, Any]:
+    """
+    **CRITICAL FOR FRAUD DISPUTES - Detects "Friendly Fraud" Patterns**
+    
+    Analyzes customer dispute history to detect fraudulent dispute patterns (customers
+    who frequently file false disputes). Uses 6 fraud detection algorithms:
+    
+    1. Excessive Disputes: >5 disputes in 90 days
+    2. High Approval Rate: >80% of disputes approved (suspicious pattern)
+    3. Rapid Succession: Multiple disputes within 7 days
+    4. Amount Pattern: Always disputes similar amounts
+    5. Merchant Pattern: Targets same merchants repeatedly
+    6. Reason Pattern: Uses same dispute reasons repeatedly
+    
+    **This tool helps prevent "friendly fraud" where customers abuse the dispute system.**
+    
+    Args:
+        customer_id (int): The customer filing the dispute
+        
+    Returns:
+        Dict containing:
+        - fraud_detected (bool): Whether fraud patterns were found
+        - patterns_found (list): List of detected fraud patterns
+        - customer_propensity_score (int): 0-100 score (0=trustworthy, 100=serial fraudster)
+        - recommendation (str): Action recommendation
+        - details (dict): Detailed analysis of each pattern
+        
+    Example:
+        detect_dispute_fraud_tool(customer_id=1)
+        
+    Decision Logic:
+        - Propensity >70: Serial fraudster → Deny dispute, flag account
+        - Propensity 30-70: Some concerns → Require additional evidence
+        - Propensity <30: Trustworthy customer → Process normally
+    """
+    from utils.dispute_fraud_detector import detect_dispute_fraud
+    is_suspicious, reason, details = detect_dispute_fraud(customer_id)
+    
+    # Convert to dict format
+    return {
+        "fraud_detected": is_suspicious,
+        "reason": reason,
+        "customer_propensity_score": details.get("propensity_score", 0),
+        "patterns_found": details.get("patterns", []),
+        "recommendation": details.get("recommendation", ""),
+        "details": details
+    }
+
+
 # List of all available tools for easy agent configuration
 ALL_TOOLS = [
     get_transaction_details_tool,
@@ -345,7 +477,9 @@ ALL_TOOLS = [
     route_to_human_tool,
     get_loan_details_tool,
     check_merchant_refund_status_tool,
-    query_compliance_policy_tool
+    query_compliance_policy_tool,
+    calculate_fraud_risk_score_tool,  # NEW - Critical for fraud disputes
+    detect_dispute_fraud_tool  # NEW - Detects friendly fraud
 ]
 
 

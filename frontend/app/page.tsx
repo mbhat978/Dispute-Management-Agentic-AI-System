@@ -18,12 +18,13 @@ export default function HomePage() {
     e.preventDefault();
     
     if (loginType === "retail") {
-      // Allow any valid seeded customer ID from 1 to 5
-      if (["1", "2", "3", "4", "5"].includes(loginId)) {
+      // Allow any valid seeded customer ID from 1 to 13
+      const customerId = parseInt(loginId);
+      if (!isNaN(customerId) && customerId >= 1 && customerId <= 13) {
         localStorage.setItem("banking_session", loginId);
         router.push("/customer");
       } else {
-        setLoginError("Invalid Account ID. Please use a valid Demo ID (1-5).");
+        setLoginError("Invalid Account ID. Please use a valid Demo ID (1-13).");
       }
     } else {
       // Employee login simulation
@@ -135,7 +136,7 @@ export default function HomePage() {
             <div className="text-center mt-4">
               <p className="text-xs text-slate-400">
                 {loginType === "retail"
-                  ? <>Demo Access: Use ID <strong>1 through 5</strong> with any password.</>
+                  ? <>Demo Access: Use ID <strong>1 through 13</strong> with any password.</>
                   : <>Demo Access: Use ID <strong>admin</strong> with any password.</>
                 }
               </p>

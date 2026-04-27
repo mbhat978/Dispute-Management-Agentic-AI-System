@@ -607,8 +607,17 @@ def _validate_decision_against_rules(
 
     if category == "fraud":
         trans_details = gathered_data.get("transaction_details", {})
+        fraud_risk = gathered_data.get("fraud_risk_score", {})
+        risk_score = fraud_risk.get("fraud_risk_score", 0) if isinstance(fraud_risk, dict) else 0
+        risk_level = fraud_risk.get("risk_level", "low") if isinstance(fraud_risk, dict) else "low"
+        
+        # Auto-approve international fraud
         if trans_details.get("is_international", False):
             return "auto_approved", "International fraud anomaly rule triggered"
+        
+        # Auto-approve high/critical velocity fraud (domestic)
+        if risk_level in ["high", "critical"] and risk_score >= 60:
+            return "auto_approved", f"Velocity fraud detected (risk score: {risk_score}, level: {risk_level})"
 
     if category == "failed_transaction":
         trans_details = gathered_data.get("transaction_details", {})

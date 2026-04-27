@@ -1,7 +1,7 @@
 """
 Seed script to populate the SQLite database with realistic mock data.
 This script creates customers, transactions, ATM logs, and dispute tickets
-covering various scenarios for testing the dispute management system.
+covering all 10 test scenarios from AGENT_TESTING_GUIDE.md.
 """
 
 import sys
@@ -30,14 +30,18 @@ def clear_database(db: Session):
     db.query(models.LoanAccount).delete()
     db.query(models.Customer).delete()
     db.commit()
-    print("Database cleared.")
+    print("✓ Database cleared.")
 
 
 def create_customers(db: Session):
-    """Create dummy customers with different account tiers."""
-    print("\nCreating customers...")
+    """Create dummy customers with different profiles for testing."""
+    print("\n📋 Creating customers...")
     
     customers = [
+        # ========================================================================
+        # ORIGINAL CUSTOMERS (from initial seed_data.py)
+        # ========================================================================
+        # Customer 1: Premium tier - John Smith
         models.Customer(
             name="John Smith",
             account_tier="Premium",
@@ -45,6 +49,7 @@ def create_customers(db: Session):
             card_number="**** **** **** 4921",
             card_status="Active"
         ),
+        # Customer 2: Gold tier - Sarah Johnson
         models.Customer(
             name="Sarah Johnson",
             account_tier="Gold",
@@ -52,6 +57,7 @@ def create_customers(db: Session):
             card_number="**** **** **** 8832",
             card_status="Active"
         ),
+        # Customer 3: Basic tier - Michael Chen
         models.Customer(
             name="Michael Chen",
             account_tier="Basic",
@@ -59,6 +65,7 @@ def create_customers(db: Session):
             card_number="**** **** **** 1194",
             card_status="Active"
         ),
+        # Customer 4: Premium tier - Emily Rodriguez
         models.Customer(
             name="Emily Rodriguez",
             account_tier="Premium",
@@ -66,11 +73,80 @@ def create_customers(db: Session):
             card_number="**** **** **** 7543",
             card_status="Active"
         ),
+        # Customer 5: Basic tier - David Kumar
         models.Customer(
             name="David Kumar",
             account_tier="Basic",
             current_account_balance=5000.00,
             card_number="**** **** **** 0092",
+            card_status="Active"
+        ),
+        
+        # ========================================================================
+        # NEW TEST SCENARIO CUSTOMERS (Indian names for comprehensive testing)
+        # ========================================================================
+        # Customer 6: Premium tier, frequent traveler
+        models.Customer(
+            name="Priya Sharma",
+            account_tier="Premium",
+            current_account_balance=125000.00,
+            card_number="**** **** **** 9876",
+            card_status="Active"
+        ),
+        # Customer 7: Gold tier, online shopper
+        models.Customer(
+            name="Rahul Verma",
+            account_tier="Gold",
+            current_account_balance=85000.00,
+            card_number="**** **** **** 5432",
+            card_status="Active"
+        ),
+        # Customer 8: Basic tier, student
+        models.Customer(
+            name="Ananya Patel",
+            account_tier="Basic",
+            current_account_balance=15000.00,
+            card_number="**** **** **** 3210",
+            card_status="Active"
+        ),
+        # Customer 9: Premium tier, business owner
+        models.Customer(
+            name="Vikram Singh",
+            account_tier="Premium",
+            current_account_balance=250000.00,
+            card_number="**** **** **** 6789",
+            card_status="Active"
+        ),
+        # Customer 10: Gold tier, subscription user
+        models.Customer(
+            name="Meera Reddy",
+            account_tier="Gold",
+            current_account_balance=65000.00,
+            card_number="**** **** **** 1357",
+            card_status="Active"
+        ),
+        # Customer 11: Basic tier, first-time user
+        models.Customer(
+            name="Arjun Kumar",
+            account_tier="Basic",
+            current_account_balance=8000.00,
+            card_number="**** **** **** 2468",
+            card_status="Active"
+        ),
+        # Customer 12: Gold tier, frequent diner
+        models.Customer(
+            name="Sneha Iyer",
+            account_tier="Gold",
+            current_account_balance=95000.00,
+            card_number="**** **** **** 3579",
+            card_status="Active"
+        ),
+        # Customer 13: Premium tier, tech enthusiast
+        models.Customer(
+            name="Karthik Menon",
+            account_tier="Premium",
+            current_account_balance=180000.00,
+            card_number="**** **** **** 4680",
             card_status="Active"
         )
     ]
@@ -80,14 +156,14 @@ def create_customers(db: Session):
     
     for customer in customers:
         db.refresh(customer)
-        print(f"  ✓ Created: {customer.name} (ID: {customer.id}, Tier: {customer.account_tier})")
+        print(f"  ✓ {customer.name} (ID: {customer.id}, Tier: {customer.account_tier}, Balance: ₹{customer.current_account_balance:,.2f})")
     
     return customers
 
 
 def create_loan_accounts(db: Session, customers):
-    """Create mock loan accounts for some customers."""
-    print("\nCreating loan accounts...")
+    """Create mock loan accounts for loan dispute scenarios."""
+    print("\n💰 Creating loan accounts...")
     
     loan_accounts = [
         models.LoanAccount(
@@ -101,9 +177,19 @@ def create_loan_accounts(db: Session, customers):
             total_outstanding=280000.00
         ),
         models.LoanAccount(
-            customer_id=customers[3].id,  # Emily Rodriguez
-            monthly_emi_amount=3200.00,
-            total_outstanding=95000.00
+            customer_id=customers[5].id,  # Priya Sharma
+            monthly_emi_amount=12000.00,
+            total_outstanding=350000.00
+        ),
+        models.LoanAccount(
+            customer_id=customers[8].id,  # Vikram Singh
+            monthly_emi_amount=25000.00,
+            total_outstanding=850000.00
+        ),
+        models.LoanAccount(
+            customer_id=customers[12].id,  # Karthik Menon
+            monthly_emi_amount=8500.00,
+            total_outstanding=180000.00
         )
     ]
     
@@ -113,25 +199,29 @@ def create_loan_accounts(db: Session, customers):
     for loan in loan_accounts:
         db.refresh(loan)
         customer = db.query(models.Customer).filter(models.Customer.id == loan.customer_id).first()
-        print(f"  ✓ Loan ID: {loan.id} - Customer: {customer.name if customer else 'Unknown'}, EMI: ${loan.monthly_emi_amount}, Outstanding: ${loan.total_outstanding}")
+        print(f"  ✓ Loan ID: {loan.id} - {customer.name if customer else 'Unknown'}, EMI: ₹{loan.monthly_emi_amount:,.2f}, Outstanding: ₹{loan.total_outstanding:,.2f}")
     
     return loan_accounts
 
 
-def create_scenario_transactions(db: Session, customers):
-    """Create transactions covering specific test scenarios."""
-    print("\nCreating scenario-based transactions...")
+def create_test_scenario_transactions(db: Session, customers):
+    """Create transactions for all 10 test scenarios from AGENT_TESTING_GUIDE.md."""
+    print("\n🎯 Creating test scenario transactions...")
     
-    base_time = datetime.utcnow() - timedelta(days=7)
+    base_time = datetime.utcnow() - timedelta(days=30)
     transactions = []
     
-    # Scenario 1: High-value international transaction (potential fraud)
-    print("\n  Scenario 1: High-value international transaction")
+    # ========================================================================
+    # SCENARIO 1: FRAUDULENT TRANSACTION (Auto-Decision)
+    # ========================================================================
+    print("\n  📍 Scenario 1: Fraudulent Transaction - International")
+    
+    # 1.1: High-value international transaction (London)
     trans1 = models.Transaction(
-        customer_id=customers[1].id,  # Sarah Johnson (Gold tier)
-        amount=8500.00,
-        merchant_name="Luxury Watches International",
-        transaction_date=base_time + timedelta(hours=2),
+        customer_id=customers[5].id,  # Priya Sharma (Customer 6)
+        amount=25000.00,
+        merchant_name="Harrods Department Store",
+        transaction_date=base_time + timedelta(days=1, hours=14),
         status="success",
         is_international=True,
         refunded_amount=0.0,
@@ -141,343 +231,463 @@ def create_scenario_transactions(db: Session, customers):
     db.commit()
     db.refresh(trans1)
     transactions.append(trans1)
-    print(f"    ✓ Transaction ID: {trans1.id} - ${trans1.amount} to {trans1.merchant_name}")
+    print(f"    ✓ ID {trans1.id}: ₹{trans1.amount:,.2f} to {trans1.merchant_name} (London, UK)")
     
-    # Scenario 2: Failed transaction but amount was deducted (no refund)
-    print("\n  Scenario 2: Failed transaction with amount deducted")
-    trans2 = models.Transaction(
-        customer_id=customers[2].id,  # Michael Chen (Basic tier)
-        amount=450.00,
-        merchant_name="Electronics Store",
-        transaction_date=base_time + timedelta(days=1, hours=5),
-        status="failed",
-        is_international=False,
-        refunded_amount=0.0,
-        transaction_type="debit"
-    )
-    db.add(trans2)
-    db.commit()
-    db.refresh(trans2)
-    transactions.append(trans2)
-    print(f"    ✓ Transaction ID: {trans2.id} - ${trans2.amount} to {trans2.merchant_name} (FAILED)")
+    # 1.2: Velocity fraud - Multiple transactions in 30 minutes
+    velocity_time = base_time + timedelta(days=2, hours=10)
+    velocity_merchants = [
+        ("Delhi Electronics", "Delhi"),
+        ("Mumbai Fashion Store", "Mumbai"),
+        ("Bangalore Tech Hub", "Bangalore"),
+        ("Chennai Jewelers", "Chennai"),
+        ("Kolkata Boutique", "Kolkata")
+    ]
     
-    # Scenario 3: Standard e-commerce transaction (merchant dispute)
-    print("\n  Scenario 3: Standard e-commerce transaction")
-    trans3 = models.Transaction(
-        customer_id=customers[0].id,  # John Smith (Premium tier)
-        amount=299.99,
-        merchant_name="TechGadgets Online",
-        transaction_date=base_time + timedelta(days=2, hours=10),
-        status="success",
-        is_international=False,
-        refunded_amount=0.0,
-        transaction_type="debit"
-    )
-    db.add(trans3)
-    db.commit()
-    db.refresh(trans3)
-    transactions.append(trans3)
-    print(f"    ✓ Transaction ID: {trans3.id} - ${trans3.amount} to {trans3.merchant_name}")
+    print("\n  📍 Scenario 1.2: Velocity Fraud - 5 transactions in 30 minutes")
+    for i, (merchant, location) in enumerate(velocity_merchants):
+        trans = models.Transaction(
+            customer_id=customers[6].id,  # Rahul Verma (Customer 7)
+            amount=9000.00,
+            merchant_name=merchant,
+            transaction_date=velocity_time + timedelta(minutes=i*6),
+            status="success",
+            is_international=False,
+            refunded_amount=0.0,
+            transaction_type="debit"
+        )
+        db.add(trans)
+        db.commit()
+        db.refresh(trans)
+        transactions.append(trans)
+        print(f"    ✓ ID {trans.id}: ₹{trans.amount:,.2f} to {merchant} ({location})")
     
-    # Scenario 4: Duplicate charges (two identical transactions within 5 minutes)
-    print("\n  Scenario 4: Duplicate charges to same merchant")
-    duplicate_time = base_time + timedelta(days=3, hours=14, minutes=30)
+    # ========================================================================
+    # SCENARIO 2: MERCHANT DISPUTE - ITEM NOT DELIVERED (Human-in-Loop)
+    # ========================================================================
+    print("\n  📍 Scenario 2: Merchant Dispute - Item Not Delivered")
     
-    trans4a = models.Transaction(
-        customer_id=customers[3].id,  # Emily Rodriguez
-        amount=89.99,
-        merchant_name="Coffee Shop Downtown",
-        transaction_date=duplicate_time,
-        status="success",
-        is_international=False,
-        refunded_amount=0.0,
-        transaction_type="debit"
-    )
-    db.add(trans4a)
-    db.commit()
-    db.refresh(trans4a)
-    transactions.append(trans4a)
-    
-    trans4b = models.Transaction(
-        customer_id=customers[3].id,  # Emily Rodriguez
-        amount=89.99,
-        merchant_name="Coffee Shop Downtown",
-        transaction_date=duplicate_time + timedelta(minutes=3),
-        status="success",
-        is_international=False,
-        refunded_amount=0.0,
-        transaction_type="debit"
-    )
-    db.add(trans4b)
-    db.commit()
-    db.refresh(trans4b)
-    transactions.append(trans4b)
-    
-    print(f"    ✓ Transaction ID: {trans4a.id} - ${trans4a.amount} to {trans4a.merchant_name}")
-    print(f"    ✓ Transaction ID: {trans4b.id} - ${trans4b.amount} to {trans4b.merchant_name} (3 minutes later)")
-    
-    # Scenario 5: ATM transaction with hardware fault
-    print("\n  Scenario 5: ATM transaction with hardware fault")
-    trans5 = models.Transaction(
-        customer_id=customers[4].id,  # David Kumar
-        amount=200.00,
-        merchant_name="ATM Withdrawal",
-        transaction_date=base_time + timedelta(days=4, hours=9),
-        status="failed",
-        is_international=False,
-        refunded_amount=0.0,
-        transaction_type="debit"
-    )
-    db.add(trans5)
-    db.commit()
-    db.refresh(trans5)
-    transactions.append(trans5)
-    
-    # Create ATM log with hardware fault
-    atm_log = models.ATM_Log(
-        transaction_id=trans5.id,
-        atm_id="ATM_NYC_5TH_AVE_001",
-        status_code="500_HARDWARE_FAULT"
-    )
-    db.add(atm_log)
-    db.commit()
-    db.refresh(atm_log)
-    
-    print(f"    ✓ Transaction ID: {trans5.id} - ${trans5.amount} ATM Withdrawal (FAILED)")
-    print(f"    ✓ ATM Log ID: {atm_log.id} - ATM: {atm_log.atm_id}, Status: {atm_log.status_code}")
-    
-    # Add some successful ATM transactions for comparison
-    trans6 = models.Transaction(
-        customer_id=customers[0].id,
-        amount=100.00,
-        merchant_name="ATM Withdrawal",
+    # 2.1: Amazon order not delivered
+    trans_amazon = models.Transaction(
+        customer_id=customers[7].id,  # Ananya Patel (Customer 8)
+        amount=79999.00,
+        merchant_name="Amazon India",
         transaction_date=base_time + timedelta(days=5, hours=11),
         status="success",
         is_international=False,
         refunded_amount=0.0,
         transaction_type="debit"
     )
-    db.add(trans6)
+    db.add(trans_amazon)
     db.commit()
-    db.refresh(trans6)
-    transactions.append(trans6)
+    db.refresh(trans_amazon)
+    transactions.append(trans_amazon)
+    print(f"    ✓ ID {trans_amazon.id}: ₹{trans_amazon.amount:,.2f} to {trans_amazon.merchant_name} (iPhone 15 Pro)")
     
-    atm_log_success = models.ATM_Log(
-        transaction_id=trans6.id,
-        atm_id="ATM_NYC_MAIN_ST_042",
-        status_code="200_DISPENSED"
-    )
-    db.add(atm_log_success)
-    db.commit()
-    print(f"    ✓ Transaction ID: {trans6.id} - ${trans6.amount} ATM Withdrawal (SUCCESS)")
-    
-    # Scenario 6: Salary deposit (credit transaction) - CANNOT BE DISPUTED
-    print("\n  Scenario 6: Salary deposit (credit transaction)")
-    trans7 = models.Transaction(
-        customer_id=customers[0].id,  # John Smith (Premium tier)
-        amount=5000.00,
-        merchant_name="Payroll Deposit",
-        transaction_date=base_time + timedelta(days=6, hours=8),
+    # 2.2: High-risk merchant - empty box received
+    trans_shady = models.Transaction(
+        customer_id=customers[8].id,  # Vikram Singh (Customer 9)
+        amount=15000.00,
+        merchant_name="ShopXYZ Online",
+        transaction_date=base_time + timedelta(days=6, hours=15),
         status="success",
         is_international=False,
         refunded_amount=0.0,
-        transaction_type="credit"
+        transaction_type="debit"
     )
-    db.add(trans7)
+    db.add(trans_shady)
     db.commit()
-    db.refresh(trans7)
-    transactions.append(trans7)
-    print(f"    ✓ Transaction ID: {trans7.id} - ${trans7.amount} Payroll Deposit (CREDIT)")
+    db.refresh(trans_shady)
+    transactions.append(trans_shady)
+    print(f"    ✓ ID {trans_shady.id}: ₹{trans_shady.amount:,.2f} to {trans_shady.merchant_name} (Laptop - Empty Box)")
+    
+    # ========================================================================
+    # SCENARIO 3: ATM DISPUTE - CASH NOT DISPENSED
+    # ========================================================================
+    print("\n  📍 Scenario 3: ATM Dispute - Cash Not Dispensed")
+    
+    # 3.1: ATM hardware fault
+    trans_atm_fault = models.Transaction(
+        customer_id=customers[9].id,  # Meera Reddy (Customer 10)
+        amount=10000.00,
+        merchant_name="ATM Withdrawal",
+        transaction_date=base_time + timedelta(days=7, hours=14, minutes=30),
+        status="failed",
+        is_international=False,
+        refunded_amount=0.0,
+        transaction_type="debit"
+    )
+    db.add(trans_atm_fault)
+    db.commit()
+    db.refresh(trans_atm_fault)
+    transactions.append(trans_atm_fault)
+    
+    # Create ATM log with dispense fault
+    atm_log_fault = models.ATM_Log(
+        transaction_id=trans_atm_fault.id,
+        atm_id="ATM_MUM_BKC_001",
+        status_code="DISPENSE_FAULT"
+    )
+    db.add(atm_log_fault)
+    db.commit()
+    print(f"    ✓ ID {trans_atm_fault.id}: ₹{trans_atm_fault.amount:,.2f} ATM Withdrawal (FAULT - No cash dispensed)")
+    
+    # 3.2: ATM success (for comparison)
+    trans_atm_success = models.Transaction(
+        customer_id=customers[9].id,  # Meera Reddy (Customer 10)
+        amount=5000.00,
+        merchant_name="ATM Withdrawal",
+        transaction_date=base_time + timedelta(days=8, hours=10),
+        status="success",
+        is_international=False,
+        refunded_amount=0.0,
+        transaction_type="debit"
+    )
+    db.add(trans_atm_success)
+    db.commit()
+    db.refresh(trans_atm_success)
+    transactions.append(trans_atm_success)
+    
+    atm_log_success = models.ATM_Log(
+        transaction_id=trans_atm_success.id,
+        atm_id="ATM_MUM_BKC_001",
+        status_code="SUCCESS"
+    )
+    db.add(atm_log_success)
+    db.commit()
+    print(f"    ✓ ID {trans_atm_success.id}: ₹{trans_atm_success.amount:,.2f} ATM Withdrawal (SUCCESS)")
+    
+    # ========================================================================
+    # SCENARIO 4: DUPLICATE TRANSACTION
+    # ========================================================================
+    print("\n  📍 Scenario 4: Duplicate Transaction")
+    
+    duplicate_time = base_time + timedelta(days=10, hours=19, minutes=30)
+    
+    trans_dup1 = models.Transaction(
+        customer_id=customers[11].id,  # Sneha Iyer (Customer 12)
+        amount=2500.00,
+        merchant_name="Taj Restaurant",
+        transaction_date=duplicate_time,
+        status="success",
+        is_international=False,
+        refunded_amount=0.0,
+        transaction_type="debit"
+    )
+    db.add(trans_dup1)
+    db.commit()
+    db.refresh(trans_dup1)
+    transactions.append(trans_dup1)
+    
+    trans_dup2 = models.Transaction(
+        customer_id=customers[11].id,  # Sneha Iyer (Customer 12)
+        amount=2500.00,
+        merchant_name="Taj Restaurant",
+        transaction_date=duplicate_time + timedelta(minutes=5),
+        status="success",
+        is_international=False,
+        refunded_amount=0.0,
+        transaction_type="debit"
+    )
+    db.add(trans_dup2)
+    db.commit()
+    db.refresh(trans_dup2)
+    transactions.append(trans_dup2)
+    
+    print(f"    ✓ ID {trans_dup1.id}: ₹{trans_dup1.amount:,.2f} to {trans_dup1.merchant_name}")
+    print(f"    ✓ ID {trans_dup2.id}: ₹{trans_dup2.amount:,.2f} to {trans_dup2.merchant_name} (5 min later - DUPLICATE)")
+    
+    # ========================================================================
+    # SCENARIO 5: INCORRECT AMOUNT - OVERCHARGED
+    # ========================================================================
+    print("\n  📍 Scenario 5: Incorrect Amount - Overcharged")
+    
+    trans_overcharge = models.Transaction(
+        customer_id=customers[12].id,  # Karthik Menon (Customer 13)
+        amount=5000.00,
+        merchant_name="Electronics Store",
+        transaction_date=base_time + timedelta(days=12, hours=16),
+        status="success",
+        is_international=False,
+        refunded_amount=0.0,
+        transaction_type="debit"
+    )
+    db.add(trans_overcharge)
+    db.commit()
+    db.refresh(trans_overcharge)
+    transactions.append(trans_overcharge)
+    print(f"    ✓ ID {trans_overcharge.id}: ₹{trans_overcharge.amount:,.2f} to {trans_overcharge.merchant_name} (Receipt shows ₹4,500)")
+    
+    # ========================================================================
+    # SCENARIO 6: SUBSCRIPTION DISPUTE - UNAUTHORIZED RECURRING CHARGE
+    # ========================================================================
+    print("\n  📍 Scenario 6: Subscription Dispute")
+    
+    # 6.1: Netflix - Cancelled but still charged
+    subscription_start = base_time + timedelta(days=1)
+    
+    # Create 12 months of Netflix charges (to establish subscription pattern)
+    for month in range(12):
+        trans_netflix = models.Transaction(
+            customer_id=customers[9].id,  # Meera Reddy (Customer 10)
+            amount=799.00,
+            merchant_name="Netflix",
+            transaction_date=subscription_start + timedelta(days=30*month),
+            status="success",
+            is_international=False,
+            refunded_amount=0.0,
+            transaction_type="debit"
+        )
+        db.add(trans_netflix)
+        db.commit()
+        db.refresh(trans_netflix)
+        transactions.append(trans_netflix)
+    
+    # Disputed charge (after claimed cancellation on day 330)
+    trans_netflix_disputed = models.Transaction(
+        customer_id=customers[9].id,  # Meera Reddy (Customer 10)
+        amount=799.00,
+        merchant_name="Netflix",
+        transaction_date=subscription_start + timedelta(days=360),
+        status="success",
+        is_international=False,
+        refunded_amount=0.0,
+        transaction_type="debit"
+    )
+    db.add(trans_netflix_disputed)
+    db.commit()
+    db.refresh(trans_netflix_disputed)
+    transactions.append(trans_netflix_disputed)
+    print(f"    ✓ ID {trans_netflix_disputed.id}: ₹{trans_netflix_disputed.amount:,.2f} to Netflix (Cancelled on day 330, charged on day 360)")
+    
+    # 6.2: Spotify - Active subscription (no cancellation)
+    for month in range(12):
+        trans_spotify = models.Transaction(
+            customer_id=customers[10].id,  # Arjun Kumar (Customer 11)
+            amount=119.00,
+            merchant_name="Spotify",
+            transaction_date=subscription_start + timedelta(days=30*month),
+            status="success",
+            is_international=False,
+            refunded_amount=0.0,
+            transaction_type="debit"
+        )
+        db.add(trans_spotify)
+        db.commit()
+        db.refresh(trans_spotify)
+        transactions.append(trans_spotify)
+    
+    print(f"    ✓ Created 12 Spotify charges for customer {customers[10].name} (Active subscription)")
+    
+    # ========================================================================
+    # SCENARIO 7: LOAN/EMI DISPUTE
+    # ========================================================================
+    print("\n  📍 Scenario 7: Loan/EMI Dispute - Incorrect Amount")
+    
+    trans_emi_wrong = models.Transaction(
+        customer_id=customers[5].id,  # Priya Sharma (Customer 6, has loan with EMI ₹12,000)
+        amount=15000.00,  # Charged ₹15,000 instead of ₹12,000
+        merchant_name="Loan EMI Payment",
+        transaction_date=base_time + timedelta(days=15, hours=9),
+        status="success",
+        is_international=False,
+        refunded_amount=0.0,
+        transaction_type="debit"
+    )
+    db.add(trans_emi_wrong)
+    db.commit()
+    db.refresh(trans_emi_wrong)
+    transactions.append(trans_emi_wrong)
+    print(f"    ✓ ID {trans_emi_wrong.id}: ₹{trans_emi_wrong.amount:,.2f} EMI (Should be ₹12,000 - Overcharged ₹3,000)")
+    
+    # ========================================================================
+    # SCENARIO 8: REFUND NOT RECEIVED
+    # ========================================================================
+    print("\n  📍 Scenario 8: Refund Not Received")
+    
+    # 8.1: Merchant refund delayed >7 days
+    trans_refund_delayed = models.Transaction(
+        customer_id=customers[7].id,  # Ananya Patel (Customer 8)
+        amount=3500.00,
+        merchant_name="Fashion Store",
+        transaction_date=base_time + timedelta(days=8, hours=14),
+        status="success",
+        is_international=False,
+        refunded_amount=0.0,
+        transaction_type="debit"
+    )
+    db.add(trans_refund_delayed)
+    db.commit()
+    db.refresh(trans_refund_delayed)
+    transactions.append(trans_refund_delayed)
+    print(f"    ✓ ID {trans_refund_delayed.id}: ₹{trans_refund_delayed.amount:,.2f} to {trans_refund_delayed.merchant_name} (Refund promised 10 days ago)")
+    
+    # ========================================================================
+    # SCENARIO 9: QUALITY/SERVICE DISPUTE
+    # ========================================================================
+    print("\n  📍 Scenario 9: Quality/Service Dispute")
+    
+    trans_quality = models.Transaction(
+        customer_id=customers[8].id,  # Vikram Singh (Customer 9)
+        amount=25000.00,
+        merchant_name="Electronics Mart",
+        transaction_date=base_time + timedelta(days=18, hours=11),
+        status="success",
+        is_international=False,
+        refunded_amount=0.0,
+        transaction_type="debit"
+    )
+    db.add(trans_quality)
+    db.commit()
+    db.refresh(trans_quality)
+    transactions.append(trans_quality)
+    print(f"    ✓ ID {trans_quality.id}: ₹{trans_quality.amount:,.2f} to {trans_quality.merchant_name} (Damaged product)")
+    
+    # ========================================================================
+    # SCENARIO 10: CHARGEBACK SCENARIO
+    # ========================================================================
+    print("\n  📍 Scenario 10: Chargeback - Merchant Non-Response")
+    
+    trans_chargeback = models.Transaction(
+        customer_id=customers[6].id,  # Rahul Verma (Customer 7)
+        amount=18000.00,
+        merchant_name="Online Gadgets",
+        transaction_date=base_time + timedelta(days=5, hours=10),
+        status="success",
+        is_international=False,
+        refunded_amount=0.0,
+        transaction_type="debit"
+    )
+    db.add(trans_chargeback)
+    db.commit()
+    db.refresh(trans_chargeback)
+    transactions.append(trans_chargeback)
+    print(f"    ✓ ID {trans_chargeback.id}: ₹{trans_chargeback.amount:,.2f} to {trans_chargeback.merchant_name} (Merchant not responding for 15 days)")
+    
+    # ========================================================================
+    # ADDITIONAL: Normal transactions for context
+    # ========================================================================
+    print("\n  📍 Additional: Normal transactions for customer history")
+    
+    normal_transactions = [
+        # Original customers
+        (customers[0].id, 299.99, "TechGadgets Online", False),  # John Smith
+        (customers[1].id, 8500.00, "Luxury Watches International", False),  # Sarah Johnson
+        (customers[2].id, 450.00, "Electronics Store", False),  # Michael Chen
+        (customers[3].id, 89.99, "Coffee Shop Downtown", False),  # Emily Rodriguez
+        (customers[4].id, 1200.00, "Grocery Store", False),  # David Kumar
+        # New test customers
+        (customers[5].id, 1200.00, "Swiggy", False),  # Priya Sharma
+        (customers[5].id, 850.00, "Uber", False),  # Priya Sharma
+        (customers[6].id, 2500.00, "Flipkart", False),  # Rahul Verma
+        (customers[7].id, 450.00, "BookMyShow", False),  # Ananya Patel
+        (customers[8].id, 5000.00, "Croma", False),  # Vikram Singh
+        (customers[9].id, 3200.00, "Zomato", False),  # Meera Reddy
+        (customers[10].id, 180.00, "Starbucks", False),  # Arjun Kumar
+        (customers[11].id, 1800.00, "Westside", False),  # Sneha Iyer
+        (customers[12].id, 12000.00, "Apple Store", False),  # Karthik Menon
+    ]
+    
+    for cust_id, amount, merchant, is_intl in normal_transactions:
+        trans = models.Transaction(
+            customer_id=cust_id,
+            amount=amount,
+            merchant_name=merchant,
+            transaction_date=base_time + timedelta(days=3, hours=12),
+            status="success",
+            is_international=is_intl,
+            refunded_amount=0.0,
+            transaction_type="debit"
+        )
+        db.add(trans)
+        db.commit()
+        db.refresh(trans)
+        transactions.append(trans)
+    
+    print(f"    ✓ Created {len(normal_transactions)} normal transactions for customer history")
     
     return transactions
 
 
-def create_dispute_tickets(db: Session, transactions):
-    """Create dispute tickets for problematic transactions."""
-    print("\nCreating dispute tickets...")
-    
-    disputes = []
-    
-    # Dispute for high-value international transaction (Scenario 1)
-    dispute1 = models.DisputeTicket(
-        transaction_id=transactions[0].id,
-        customer_id=transactions[0].customer_id,
-        dispute_reason="I did not authorize this high-value international transaction. I was not traveling abroad and did not make this purchase.",
-        dispute_category=None,  # Will be set by Triage Agent
-        status="open",
-        final_decision=None,
-        decision_reasoning=None,
-        resolution_notes=None
-    )
-    db.add(dispute1)
-    disputes.append(dispute1)
-    
-    # Dispute for failed transaction with deducted amount (Scenario 2)
-    dispute2 = models.DisputeTicket(
-        transaction_id=transactions[1].id,
-        customer_id=transactions[1].customer_id,
-        dispute_reason="Transaction shows as failed but the money was still deducted from my account. I never received the goods.",
-        dispute_category=None,  # Will be set by Triage Agent
-        status="open",
-        final_decision=None,
-        decision_reasoning=None,
-        resolution_notes=None
-    )
-    db.add(dispute2)
-    disputes.append(dispute2)
-    
-    # Dispute for e-commerce transaction (Scenario 3)
-    dispute3 = models.DisputeTicket(
-        transaction_id=transactions[2].id,
-        customer_id=transactions[2].customer_id,
-        dispute_reason="Item received was not as described on the website. Merchant refusing to accept return.",
-        dispute_category=None,  # Will be set by Triage Agent
-        status="under_investigation",
-        final_decision=None,
-        decision_reasoning=None,
-        resolution_notes=None
-    )
-    db.add(dispute3)
-    disputes.append(dispute3)
-    
-    # Dispute for duplicate charge (Scenario 4)
-    dispute4 = models.DisputeTicket(
-        transaction_id=transactions[4].id,  # Second duplicate transaction
-        customer_id=transactions[4].customer_id,
-        dispute_reason="I was charged twice for the same purchase within minutes. This appears to be a duplicate charge.",
-        dispute_category=None,  # Will be set by Triage Agent
-        status="open",
-        final_decision=None,
-        decision_reasoning=None,
-        resolution_notes=None
-    )
-    db.add(dispute4)
-    disputes.append(dispute4)
-    
-    # Dispute for ATM hardware fault (Scenario 5)
-    dispute5 = models.DisputeTicket(
-        transaction_id=transactions[5].id,
-        customer_id=transactions[5].customer_id,
-        dispute_reason="ATM did not dispense cash but my account was debited. ATM showed error message.",
-        dispute_category=None,  # Will be set by Triage Agent
-        status="open",
-        final_decision=None,
-        decision_reasoning=None,
-        resolution_notes=None
-    )
-    db.add(dispute5)
-    disputes.append(dispute5)
-    
-    db.commit()
-    
-    for i, dispute in enumerate(disputes, 1):
-        db.refresh(dispute)
-        print(f"  ✓ Dispute ID: {dispute.id} - Status: {dispute.status}")
-        print(f"    Reason: {dispute.dispute_reason[:80]}...")
-    
-    return disputes
-
-
-def create_audit_logs(db: Session, disputes):
-    """Create sample audit logs for dispute investigation."""
-    print("\nCreating audit logs for disputes...")
-    
-    audit_logs = []
-    
-    # Audit logs for first dispute (fraud detection)
-    log1 = models.AuditLog(
-        ticket_id=disputes[0].id,
-        agent_name="FraudDetectionAgent",
-        action_type="thought",
-        description="Analyzing transaction for potential fraud indicators: high-value, international, customer's typical spending pattern.",
-        timestamp=datetime.utcnow() - timedelta(hours=2)
-    )
-    audit_logs.append(log1)
-    
-    log2 = models.AuditLog(
-        ticket_id=disputes[0].id,
-        agent_name="FraudDetectionAgent",
-        action_type="tool_call",
-        description="Checking customer's transaction history for international purchases.",
-        timestamp=datetime.utcnow() - timedelta(hours=1, minutes=55)
-    )
-    audit_logs.append(log2)
-    
-    log3 = models.AuditLog(
-        ticket_id=disputes[0].id,
-        agent_name="FraudDetectionAgent",
-        action_type="observation",
-        description="Customer has no prior international transactions in the last 12 months. Flagging for human review.",
-        timestamp=datetime.utcnow() - timedelta(hours=1, minutes=50)
-    )
-    audit_logs.append(log3)
-    
-    # Audit log for ATM dispute
-    log4 = models.AuditLog(
-        ticket_id=disputes[4].id,
-        agent_name="ATMDisputeAgent",
-        action_type="tool_call",
-        description="Retrieving ATM log for transaction verification.",
-        timestamp=datetime.utcnow() - timedelta(hours=1)
-    )
-    audit_logs.append(log4)
-    
-    log5 = models.AuditLog(
-        ticket_id=disputes[4].id,
-        agent_name="ATMDisputeAgent",
-        action_type="observation",
-        description="ATM log shows status code 500_HARDWARE_FAULT. Cash was not dispensed. Recommending automatic approval.",
-        timestamp=datetime.utcnow() - timedelta(minutes=55)
-    )
-    audit_logs.append(log5)
-    
-    db.add_all(audit_logs)
-    db.commit()
-    
-    print(f"  ✓ Created {len(audit_logs)} audit log entries")
-    
-    return audit_logs
-
-
 def print_summary(db: Session):
-    """Print summary of seeded data."""
-    print("\n" + "="*60)
+    """Print summary of seeded data with scenario mapping."""
+    print("\n" + "="*70)
     print("DATABASE SEEDING SUMMARY")
-    print("="*60)
+    print("="*70)
     
     customer_count = db.query(models.Customer).count()
     loan_count = db.query(models.LoanAccount).count()
     transaction_count = db.query(models.Transaction).count()
     atm_log_count = db.query(models.ATM_Log).count()
-    dispute_count = db.query(models.DisputeTicket).count()
-    audit_log_count = db.query(models.AuditLog).count()
     
     print(f"\n📊 Total Records Created:")
     print(f"  • Customers: {customer_count}")
     print(f"  • Loan Accounts: {loan_count}")
     print(f"  • Transactions: {transaction_count}")
     print(f"  • ATM Logs: {atm_log_count}")
-    print(f"  • Dispute Tickets: {dispute_count}")
-    print(f"  • Audit Logs: {audit_log_count}")
     
-    print(f"\n🎯 Scenario Coverage:")
-    print(f"  ✓ High-value international transaction")
-    print(f"  ✓ Failed transaction with amount deducted")
-    print(f"  ✓ Standard e-commerce transaction")
-    print(f"  ✓ Duplicate charges (same merchant, 3 min apart)")
-    print(f"  ✓ ATM transaction with hardware fault")
-    print(f"  ✓ Loan/EMI accounts for dispute scenarios")
+    print(f"\n🎯 Test Scenario Coverage (AGENT_TESTING_GUIDE.md):")
+    print(f"  ✓ Scenario 1: Fraudulent Transaction (International + Velocity)")
+    print(f"  ✓ Scenario 2: Merchant Dispute - Item Not Delivered")
+    print(f"  ✓ Scenario 3: ATM Dispute - Cash Not Dispensed")
+    print(f"  ✓ Scenario 4: Duplicate Transaction")
+    print(f"  ✓ Scenario 5: Incorrect Amount - Overcharged")
+    print(f"  ✓ Scenario 6: Subscription Dispute (Netflix + Spotify)")
+    print(f"  ✓ Scenario 7: Loan/EMI Dispute")
+    print(f"  ✓ Scenario 8: Refund Not Received")
+    print(f"  ✓ Scenario 9: Quality/Service Dispute")
+    print(f"  ✓ Scenario 10: Chargeback Scenario")
     
-    print("\n" + "="*60)
+    print(f"\n💡 Quick Test Transaction IDs:")
+    
+    # Get specific transaction IDs for easy testing
+    fraud_intl = db.query(models.Transaction).filter(
+        models.Transaction.merchant_name == "Harrods Department Store"
+    ).first()
+    
+    amazon = db.query(models.Transaction).filter(
+        models.Transaction.merchant_name == "Amazon India"
+    ).first()
+    
+    atm_fault = db.query(models.Transaction).join(models.ATM_Log).filter(
+        models.ATM_Log.status_code == "DISPENSE_FAULT"
+    ).first()
+    
+    duplicate = db.query(models.Transaction).filter(
+        models.Transaction.merchant_name == "Taj Restaurant"
+    ).first()
+    
+    netflix = db.query(models.Transaction).filter(
+        models.Transaction.merchant_name == "Netflix"
+    ).order_by(models.Transaction.id.desc()).first()
+    
+    emi = db.query(models.Transaction).filter(
+        models.Transaction.merchant_name == "Loan EMI Payment"
+    ).first()
+    
+    print(f"  • Fraudulent (International): Transaction ID {fraud_intl.id if fraud_intl else 'N/A'}")
+    print(f"  • Merchant Dispute (Amazon): Transaction ID {amazon.id if amazon else 'N/A'}")
+    print(f"  • ATM Fault: Transaction ID {atm_fault.id if atm_fault else 'N/A'}")
+    print(f"  • Duplicate: Transaction ID {duplicate.id if duplicate else 'N/A'}")
+    print(f"  • Subscription (Netflix): Transaction ID {netflix.id if netflix else 'N/A'}")
+    print(f"  • EMI Overcharge: Transaction ID {emi.id if emi else 'N/A'}")
+    
+    print("\n" + "="*70)
     print("✅ Database seeding completed successfully!")
-    print("="*60 + "\n")
+    print("="*70)
+    print("\n💡 Next Steps:")
+    print("  1. Start your cluster: start_cluster.bat")
+    print("  2. Open AGENT_TESTING_GUIDE.md")
+    print("  3. Test each scenario using the transaction IDs above")
+    print("  4. Create disputes via UI (http://localhost:3000) or API")
+    print("="*70 + "\n")
 
 
 def main():
     """Main function to seed the database."""
-    print("\n" + "="*60)
+    print("\n" + "="*70)
     print("BANKING DISPUTE MANAGEMENT - DATABASE SEEDER")
-    print("="*60)
+    print("Comprehensive Test Data for All 10 Scenarios")
+    print("="*70)
     
     # Create database session
     db = SessionLocal()
@@ -489,15 +699,15 @@ def main():
         # Create data in order
         customers = create_customers(db)
         loan_accounts = create_loan_accounts(db, customers)
-        transactions = create_scenario_transactions(db, customers)
-        disputes = create_dispute_tickets(db, transactions)
-        audit_logs = create_audit_logs(db, disputes)
+        transactions = create_test_scenario_transactions(db, customers)
         
         # Print summary
         print_summary(db)
         
     except Exception as e:
         print(f"\n❌ Error during seeding: {str(e)}")
+        import traceback
+        traceback.print_exc()
         db.rollback()
         raise
     finally:
@@ -506,3 +716,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# Made with Bob

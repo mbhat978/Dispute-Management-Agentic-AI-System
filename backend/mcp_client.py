@@ -8,7 +8,7 @@ server and reuses the same session for all tool calls.
 
 import asyncio
 import json
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
 from mcp.client.sse import sse_client
@@ -18,6 +18,7 @@ from mcp.client.session import ClientSession
 # SSE server configuration
 SSE_SERVER_URL = "http://localhost:8001/sse"
 COMPLIANCE_SSE_SERVER_URL = "http://localhost:8002/sse"
+ENHANCED_BANKING_SSE_SERVER_URL = "http://localhost:8003/sse"
 
 
 async def _call_mcp_tool_async(
@@ -346,6 +347,130 @@ def analyze_receipt_evidence(receipt_base64: str, expected_merchant: str) -> str
     return json.dumps(result)
 
 
+# ============================================================================
+# Enhanced Banking Tool Wrapper Functions (New MCP Server on Port 8003)
+# ============================================================================
+
+def get_delivery_tracking_status(transaction_id: int, tracking_number: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Get delivery tracking status for merchant disputes involving undelivered items.
+    
+    Args:
+        transaction_id (int): The unique identifier of the transaction.
+        tracking_number (str, optional): Tracking number if available.
+        
+    Returns:
+        Dict[str, Any]: Delivery status, location, and estimated delivery date.
+    """
+    return call_mcp_tool(
+        'get_delivery_tracking_status_tool',
+        {
+            'transaction_id': transaction_id,
+            'tracking_number': tracking_number
+        },
+        server_url=ENHANCED_BANKING_SSE_SERVER_URL
+    )
+
+
+def check_merchant_reputation_score(merchant_name: str) -> Dict[str, Any]:
+    """
+    Check merchant reputation score based on historical dispute patterns.
+    
+    Args:
+        merchant_name (str): The name of the merchant.
+        
+    Returns:
+        Dict[str, Any]: Reputation score (0-100), dispute rate, and risk level.
+    """
+    return call_mcp_tool(
+        'check_merchant_reputation_score_tool',
+        {'merchant_name': merchant_name},
+        server_url=ENHANCED_BANKING_SSE_SERVER_URL
+    )
+
+
+def get_merchant_dispute_history(merchant_name: str, days: int = 90) -> Dict[str, Any]:
+    """
+    Get historical dispute data for a specific merchant.
+    
+    Args:
+        merchant_name (str): The name of the merchant.
+        days (int, optional): Number of days to look back. Defaults to 90.
+        
+    Returns:
+        Dict[str, Any]: Total disputes, resolution rate, common issues, and patterns.
+    """
+    return call_mcp_tool(
+        'get_merchant_dispute_history_tool',
+        {
+            'merchant_name': merchant_name,
+            'days': days
+        },
+        server_url=ENHANCED_BANKING_SSE_SERVER_URL
+    )
+
+
+def check_subscription_status(customer_id: int, merchant_name: str) -> Dict[str, Any]:
+    """
+    Check if customer has an active subscription with the merchant.
+    
+    Args:
+        customer_id (int): The unique identifier of the customer.
+        merchant_name (str): The name of the merchant.
+        
+    Returns:
+        Dict[str, Any]: Subscription status, billing cycle, and next charge date.
+    """
+    return call_mcp_tool(
+        'check_subscription_status_tool',
+        {
+            'customer_id': customer_id,
+            'merchant_name': merchant_name
+        },
+        server_url=ENHANCED_BANKING_SSE_SERVER_URL
+    )
+
+
+def verify_subscription_cancellation(customer_id: int, merchant_name: str, cancellation_date: str) -> Dict[str, Any]:
+    """
+    Verify if customer properly cancelled subscription before disputed charge.
+    
+    Args:
+        customer_id (int): The unique identifier of the customer.
+        merchant_name (str): The name of the merchant.
+        cancellation_date (str): Date customer claims they cancelled (ISO format).
+        
+    Returns:
+        Dict[str, Any]: Cancellation verification status and merchant confirmation.
+    """
+    return call_mcp_tool(
+        'verify_subscription_cancellation_tool',
+        {
+            'customer_id': customer_id,
+            'merchant_name': merchant_name,
+            'cancellation_date': cancellation_date
+        },
+        server_url=ENHANCED_BANKING_SSE_SERVER_URL
+    )
+
+
+def get_refund_timeline(transaction_id: int) -> Dict[str, Any]:
+    """
+    Get detailed refund processing timeline and current stage.
+    
+    Args:
+        transaction_id (int): The unique identifier of the transaction.
+        
+    Returns:
+        Dict[str, Any]: Refund stage, days elapsed, expected completion, and recommendations.
+    """
+    return call_mcp_tool(
+        'get_refund_timeline_tool',
+        {'transaction_id': transaction_id},
+        server_url=ENHANCED_BANKING_SSE_SERVER_URL
+    )
+
+
 # Helper function for agent introspection
 def get_available_tools() -> list:
     """
@@ -406,6 +531,30 @@ def get_available_tools() -> list:
         {
             "name": "analyze_receipt_evidence",
             "description": "Analyze a Base64 receipt image to extract charged amount and merchant name for 'incorrect_amount' disputes"
+        },
+        {
+            "name": "get_delivery_tracking_status",
+            "description": "Get delivery tracking status for merchant disputes involving undelivered items"
+        },
+        {
+            "name": "check_merchant_reputation_score",
+            "description": "Check merchant reputation score based on historical dispute patterns"
+        },
+        {
+            "name": "get_merchant_dispute_history",
+            "description": "Get historical dispute data for a specific merchant to identify patterns"
+        },
+        {
+            "name": "check_subscription_status",
+            "description": "Check if customer has an active subscription with the merchant"
+        },
+        {
+            "name": "verify_subscription_cancellation",
+            "description": "Verify if customer properly cancelled subscription before disputed charge"
+        },
+        {
+            "name": "get_refund_timeline",
+            "description": "Get detailed refund processing timeline and current stage with recommendations"
         }
     ]
     return tools

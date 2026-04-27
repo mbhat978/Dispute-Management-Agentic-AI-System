@@ -256,35 +256,46 @@ AVAILABLE TOOLS:
 2. get_customer_history - Gets last 5 transactions for pattern analysis
    Use when: Fraud suspected, need to verify spending patterns, check for anomalies
    
-3. check_atm_logs - Queries ATM machine logs for hardware faults
+3. **calculate_fraud_risk_score** - **CRITICAL FOR FRAUD DISPUTES** - Calculates 0-100 fraud risk score using 5-factor analysis
+   Use when: Category is 'fraud' or 'fraudulent_transaction' (MANDATORY - MUST ALWAYS USE)
+   Analyzes: velocity, amount anomaly, geographic risk, time risk, merchant risk
+   Input: {{"transaction_id": <id>, "customer_id": <id>}}
+   
+4. **detect_dispute_fraud** - **CRITICAL FOR FRAUD DISPUTES** - Detects "friendly fraud" patterns
+   Use when: Category is 'fraud' or 'fraudulent_transaction' (MANDATORY - MUST ALWAYS USE)
+   Checks: excessive disputes, rapid succession, pattern matching, customer propensity score
+   Input: {{"customer_id": <id>}}
+   
+5. check_atm_logs - Queries ATM machine logs for hardware faults
    Use when: ATM dispute, need to verify if cash was dispensed or hardware fault occurred
    
-4. check_duplicate_transactions - Searches for duplicate charges in time window
+6. check_duplicate_transactions - Searches for duplicate charges in time window
    Use when: Duplicate charge suspected, need to find matching transactions
    
-5. get_loan_details - Retrieves loan EMI schedule and outstanding balance
+7. get_loan_details - Retrieves loan EMI schedule and outstanding balance
    Use when: Loan/EMI dispute, need loan account information
    
-6. check_merchant_refund_status - Checks if merchant initiated refund
+8. check_merchant_refund_status - Checks if merchant initiated refund
    Use when: Refund not received, need to verify merchant/gateway status
    
-7. verify_receipt_amount - Verifies customer claimed receipt amount against the ledger
+9. verify_receipt_amount - Verifies customer claimed receipt amount against the ledger
    Use when: 'incorrect_amount' dispute. You MUST extract the customer's claimed/expected amount from their query and pass it as a float in 'claimed_amount' in the input.
    
-8. initiate_chargeback - Initiates a chargeback with the card network
-   Use when: 'merchant_dispute'. Pass a summary of the issue as 'reason' in the input.
+10. initiate_chargeback - Initiates a chargeback with the card network
+    Use when: 'merchant_dispute'. Pass a summary of the issue as 'reason' in the input.
 
-9. analyze_receipt_evidence - Analyzes a Base64 receipt image using Vision OCR to extract merchant name and charged amount
-   Use when: Customer claims 'incorrect_amount' AND a receipt image is available (receipt_image_base64 exists in state).
-   CRITICAL: If the customer claims an incorrect amount and the state contains receipt_image_base64, you MUST use this tool to extract the printed amount and compare it against the ledger amount before making a recommendation.
-   Input: {{"receipt_base64": "<base64_string>", "expected_merchant": "<merchant_name>"}}
+11. analyze_receipt_evidence - Analyzes a Base64 receipt image using Vision OCR to extract merchant name and charged amount
+    Use when: Customer claims 'incorrect_amount' AND a receipt image is available (receipt_image_base64 exists in state).
+    CRITICAL: If the customer claims an incorrect amount and the state contains receipt_image_base64, you MUST use this tool to extract the printed amount and compare it against the ledger amount before making a recommendation.
+    Input: {{"receipt_base64": "<base64_string>", "expected_merchant": "<merchant_name>"}}
 
 INVESTIGATION STRATEGY:
 - Start with transaction_details if not already available
+- **MANDATORY FOR FRAUD**: If category is 'fraud' or 'fraudulent_transaction', you MUST include both calculate_fraud_risk_score AND detect_dispute_fraud in your plan
 - Choose tools that directly address the dispute category
 - Consider customer query for additional context clues
 - Avoid redundant tool calls (check prior_data_keys)
-- Plan 2-4 tools maximum for efficiency
+- Plan 2-5 tools maximum for efficiency
 - IMPORTANT: If receipt_image_base64 is present in the state and the dispute is about incorrect_amount, you MUST include analyze_receipt_evidence in your plan
 
 Return ONLY valid JSON:
@@ -379,7 +390,20 @@ def _rule_based_plan(
             "input": {"transaction_id": transaction_id},
         })
 
-    if category == "fraud":
+    if category == "fraud" or category == "fraudulent_transaction":
+        # MANDATORY: Fraud scorer for quantitative risk assessment
+        plan.append({
+            "tool": "calculate_fraud_risk_score",
+            "data_key": "fraud_risk_score",
+            "input": {"transaction_id": transaction_id, "customer_id": customer_id},
+        })
+        # MANDATORY: Dispute fraud detector to check for friendly fraud
+        plan.append({
+            "tool": "detect_dispute_fraud",
+            "data_key": "dispute_fraud_analysis",
+            "input": {"customer_id": customer_id},
+        })
+        # Customer history for context
         plan.append({
             "tool": "get_customer_history",
             "data_key": "customer_history",
@@ -442,6 +466,8 @@ def _sanitize_plan(
         "verify_receipt_amount": "receipt_verification",
         "initiate_chargeback": "chargeback_status",
         "analyze_receipt_evidence": "receipt_analysis",
+        "calculate_fraud_risk_score": "fraud_risk_score",
+        "detect_dispute_fraud": "dispute_fraud_analysis",
     }
 
     sanitized: List[Dict[str, Any]] = []
@@ -468,7 +494,33 @@ def _sanitize_plan(
         elif tool_name == "verify_receipt_amount":
             tool_input = {"transaction_id": transaction_id, "claimed_amount": tool_input.get("claimed_amount", 0.0)}
         elif tool_name == "initiate_chargeback":
-            tool_input = {"transaction_id": transaction_id, "reason": tool_input.get("reason", "customer_dispute")}
+            # Get transaction details to obtain amount
+            trans_details = banking_tools.get_transaction_details(transaction_id)
+            amount = trans_details.get("amount", 0.0) if trans_details else 0.0
+            reason = tool_input.get("reason", "customer_dispute")
+            
+            # Map reason to network reason code
+            reason_code_map = {
+                "fraud": "10.4",
+                "merchant_dispute": "13.1",
+                "incorrect_amount": "12.5",
+                "duplicate": "12.6",
+                "failed_transaction": "11.1",
+                "customer_dispute": "13.1"
+            }
+            network_code = reason_code_map.get(reason, "13.1")
+            
+            tool_input = {
+                "transaction_id": transaction_id,
+                "chargeback_amount": amount,
+                "network_reason_code": network_code,
+                "notes": f"Chargeback initiated for {reason}",
+                "reason": reason  # Keep for backward compatibility
+            }
+        elif tool_name == "calculate_fraud_risk_score":
+            tool_input = {"transaction_id": transaction_id, "customer_id": customer_id}
+        elif tool_name == "detect_dispute_fraud":
+            tool_input = {"customer_id": customer_id}
         elif tool_name == "analyze_receipt_evidence":
             # Use the receipt_image_base64 from state if available
             tool_input = {
@@ -520,7 +572,12 @@ def _execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
     if tool_name == "verify_receipt_amount":
         return banking_tools.verify_receipt_amount(tool_input["transaction_id"], tool_input.get("claimed_amount", 0.0))
     if tool_name == "initiate_chargeback":
-        return banking_tools.initiate_chargeback(tool_input["transaction_id"], tool_input.get("reason", "customer_dispute"))
+        return banking_tools.initiate_chargeback(
+            tool_input["transaction_id"],
+            tool_input.get("chargeback_amount", 0.0),
+            tool_input.get("network_reason_code", "13.1"),
+            tool_input.get("notes", "Chargeback initiated")
+        )
     if tool_name == "analyze_receipt_evidence":
         result_str = banking_tools.analyze_receipt_evidence(
             tool_input.get("receipt_base64", ""),
@@ -529,6 +586,14 @@ def _execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
         # Parse the JSON string returned by analyze_receipt_evidence
         import json
         return json.loads(result_str)
+    if tool_name == "calculate_fraud_risk_score":
+        # Import the tool wrapper which handles data fetching and fraud scoring
+        from agents.tools_wrapper import calculate_fraud_risk_score_tool
+        return calculate_fraud_risk_score_tool.invoke(tool_input)
+    if tool_name == "detect_dispute_fraud":
+        # Import the tool wrapper which handles dispute fraud detection
+        from agents.tools_wrapper import detect_dispute_fraud_tool
+        return detect_dispute_fraud_tool.invoke(tool_input)
     return {"error": f"Unsupported tool: {tool_name}"}
 
 
@@ -543,7 +608,8 @@ def _assess_evidence(
     base_quality = min(1.0, len(evidence_keys) / 4)
 
     category_requirements = {
-        "fraud": {"transaction_details", "customer_history"},
+        "fraud": {"transaction_details", "customer_history", "fraud_risk_score", "dispute_fraud_analysis"},
+        "fraudulent_transaction": {"transaction_details", "customer_history", "fraud_risk_score", "dispute_fraud_analysis"},
         "duplicate": {"transaction_details", "duplicate_check"},
         "atm_failure": {"transaction_details", "atm_logs"},
         "loan_dispute": {"transaction_details", "loan_details"},

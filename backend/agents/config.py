@@ -85,7 +85,22 @@ DISPUTE_CATEGORIES = {
     "loan_dispute": "Dispute related to loan account or EMI",
     "refund_not_received": "Refund not received from merchant",
     "incorrect_amount": "Amount charged differs from expected or receipt amount",
+    "subscription_cancellation": "Subscription cancelled but still charged",
+    "partial_delivery": "Ordered multiple items but received only some",
+    "quality_dispute": "Product received damaged or defective",
+    "unauthorized_recurring": "Recurring charges after cancellation",
+    "currency_conversion": "Incorrect exchange rate applied",
+    "preauth_hold": "Pre-authorization hold not released",
     "unknown": "Category not yet determined"
+}
+
+# Loan dispute subcategories
+LOAN_DISPUTE_SUBCATEGORIES = {
+    "emi_calculation_error": "EMI amount doesn't match loan agreement",
+    "interest_rate_dispute": "Interest rate charged is incorrect",
+    "prepayment_penalty": "Unfair prepayment penalty charges",
+    "missed_payment_fee": "Disputed late payment fees",
+    "loan_closure": "Issues with loan foreclosure amount"
 }
 
 # ============================================================================
