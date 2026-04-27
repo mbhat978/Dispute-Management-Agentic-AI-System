@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, Mapped, mapped_column
 from datetime import datetime
+from typing import Optional
 
 # Support both relative and absolute imports
 try:
@@ -27,10 +28,12 @@ class LoanAccount(Base):
 class Customer(Base):
     __tablename__ = "customers"
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(255), nullable=False)
-    account_tier = Column(String(50), nullable=False)  # e.g., 'Basic', 'Premium', 'Gold'
-    current_account_balance = Column(Float, nullable=False)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    account_tier: Mapped[str] = mapped_column(String(50), nullable=False)  # e.g., 'Basic', 'Premium', 'Gold'
+    current_account_balance: Mapped[float] = mapped_column(Float, nullable=False)
+    card_number: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, default="**** **** **** 1234")
+    card_status: Mapped[str] = mapped_column(String(20), nullable=False, default="Active")  # 'Active', 'Blocked'
 
     # Relationships
     transactions = relationship("Transaction", back_populates="customer")

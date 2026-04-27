@@ -25,6 +25,8 @@ interface Customer {
   name: string;
   account_tier: string;
   current_account_balance: number;
+  card_number?: string;
+  card_status?: string;
 }
 
 interface Transaction {
@@ -1060,16 +1062,28 @@ export default function CustomerPortalPage() {
               <div className="rounded-[2.5rem] bg-gradient-to-br from-slate-900 via-slate-800 to-black p-8 text-white shadow-2xl relative overflow-hidden">
                 <div className="absolute top-0 right-0 p-8 opacity-10"><Landmark className="h-48 w-48" /></div>
                 <div className="relative z-10">
-                  <p className="text-sm font-medium uppercase tracking-[0.2em] text-slate-400 mb-2">Available Balance</p>
-                  <h2 className="text-6xl font-light tracking-tighter mb-12">${selectedCustomer?.current_account_balance.toLocaleString('en-US', {minimumFractionDigits: 2})}</h2>
-                  <div className="flex items-end justify-between">
-                    <div>
-                      <p className="text-xs text-slate-400 mb-1 uppercase tracking-wider">Cardholder</p>
-                      <p className="font-medium text-lg tracking-wide">{selectedCustomer?.name}</p>
-                    </div>
-                    <Badge className="bg-white/10 text-white border-none backdrop-blur-md px-4 py-1.5 text-xs font-semibold rounded-full">
-                      {selectedCustomer?.account_tier} Tier
+                  <div className="flex justify-between items-start mb-2">
+                    <p className="text-sm font-medium uppercase tracking-[0.2em] text-slate-400">Available Balance</p>
+                    <Badge className={`px-3 py-1 text-xs font-semibold rounded-full border-none backdrop-blur-md ${selectedCustomer?.card_status === 'Blocked' ? 'bg-red-500/20 text-red-200' : 'bg-green-500/20 text-green-200'}`}>
+                      {selectedCustomer?.card_status === 'Blocked' ? '🔒 Card Blocked' : '🟢 Card Active'}
                     </Badge>
+                  </div>
+                  <h2 className="text-6xl font-light tracking-tighter mb-8">${selectedCustomer?.current_account_balance.toLocaleString('en-US', {minimumFractionDigits: 2})}</h2>
+                  
+                  <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4 border-t border-white/10 pt-6">
+                    <div className="flex items-end gap-3">
+                      <div>
+                        <p className="text-xs text-slate-400 mb-1 uppercase tracking-wider">Cardholder</p>
+                        <p className="font-medium text-lg tracking-wide">{selectedCustomer?.name}</p>
+                      </div>
+                      <Badge className="bg-white/10 text-white border-none backdrop-blur-md px-4 py-1.5 text-xs font-semibold rounded-full mb-0.5">
+                        {selectedCustomer?.account_tier} Tier
+                      </Badge>
+                    </div>
+                    <div className="text-left sm:text-right mt-4 sm:mt-0">
+                      <p className="text-xs text-slate-400 mb-1 uppercase tracking-wider">Card Number</p>
+                      <p className="font-mono text-xl tracking-[0.15em] text-slate-200">{selectedCustomer?.card_number || '**** **** **** 1234'}</p>
+                    </div>
                   </div>
                 </div>
               </div>

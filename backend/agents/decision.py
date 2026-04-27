@@ -143,7 +143,7 @@ def decision_node(state: DisputeState) -> Dict[str, Any]:
             risk_factors = llm_reasoning.get("risk_factors", [])
             recommended_actions = llm_reasoning.get("recommended_actions", [])
 
-        _execute_decision_actions(
+        system_actions = _execute_decision_actions(
             final_decision=final_decision,
             category=category,
             ticket_id=ticket_id,
@@ -161,6 +161,8 @@ def decision_node(state: DisputeState) -> Dict[str, Any]:
             customer_tier=str(customer_tier),
         )
 
+        actions_str = chr(10).join(f"- {a}" for a in system_actions) if system_actions else "- No automated actions taken"
+
         decision_entry = f"""Decision Agent ANALYSIS:
 {analysis}
 
@@ -171,6 +173,9 @@ JUSTIFICATION:
 
 EVIDENCE USED:
 {chr(10).join(f"- {e}" for e in evidence_used) if evidence_used else "- transaction_details"}
+
+EXECUTED SYSTEM ACTIONS:
+{actions_str}
 
 RISK FACTORS:
 {chr(10).join(f"- {r}" for r in risk_factors) if risk_factors else "- none identified"}
@@ -645,30 +650,43 @@ def _execute_decision_actions(
     gathered_data: Dict[str, Any],
     recommended_actions: list,
     escalation_summary: str,
-) -> None:
+) -> list:
+    actions_taken = []
     if final_decision in ["auto_approved", "resolved_approved"] and transaction_id is not None:
         if category == "fraud":
             banking_tools.block_card(customer_id, f"Suspected fraud for disputed transaction {transaction_id}")
             logger.info(f"[DECISION AGENT] Card blocked for customer {customer_id} due to fraud")
+            actions_taken.append("🚨 SECURITY: Original card blocked permanently.")
+
+            banking_tools.issue_replacement_card(customer_id, expedited_shipping=True)
+            logger.info(f"[DECISION AGENT] Replacement card issued for customer {customer_id} with expedited shipping")
+            actions_taken.append("💳 PROVISIONED: New virtual card issued to Digital Wallet.")
 
             banking_tools.initiate_refund(transaction_id, amount, "Fraud dispute approved")
             logger.info(f"[DECISION AGENT] Full refund initiated: ${amount} for transaction {transaction_id}")
+            actions_taken.append(f"💰 REFUNDED: Full amount of ${amount} credited back.")
+            
         elif category == "incorrect_amount":
-            # Handle partial refund for incorrect amount disputes
             receipt_data = gathered_data.get("receipt_verification", {})
             partial_amount = receipt_data.get("discrepancy_amount")
             if partial_amount is not None and partial_amount > 0:
                 banking_tools.initiate_refund(transaction_id, partial_amount, "Incorrect amount partial refund")
                 logger.info(f"[DECISION AGENT] Partial refund initiated: ${partial_amount} for transaction {transaction_id}")
+                actions_taken.append(f"💰 REFUNDED: Partial amount of ${partial_amount} credited back.")
             else:
-                # Fallback to full refund if partial amount not available
                 banking_tools.initiate_refund(transaction_id, amount, "Incorrect amount dispute approved")
-                logger.warning(f"[DECISION AGENT] Partial amount not found, initiated full refund for transaction {transaction_id}")
+                actions_taken.append(f"💰 REFUNDED: Full amount of ${amount} credited back.")
+                
         elif category in {"atm_failure", "duplicate", "failed_transaction"}:
             banking_tools.initiate_refund(transaction_id, amount, f"{category} dispute approved")
             logger.info(f"[DECISION AGENT] Full refund initiated: ${amount} for {category} transaction {transaction_id}")
+            actions_taken.append(f"💰 REFUNDED: Full amount of ${amount} credited back.")
+            
     elif final_decision == "human_review_required":
         banking_tools.route_to_human(ticket_id, escalation_summary)
+        actions_taken.append("👤 ESCALATED: Ticket routed to human agent.")
+        
+    return actions_taken
 
 
 # Made with Bob

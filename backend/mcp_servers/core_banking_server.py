@@ -11,6 +11,7 @@ from banking_tools import (
     check_atm_logs,
     check_duplicate_transactions,
     block_card,
+    issue_replacement_card,
     initiate_refund,
     route_to_human,
     get_loan_details,
@@ -108,6 +109,24 @@ def block_card_tool(customer_id: int, reason: str = "Suspected fraud") -> dict:
         Dictionary containing status, customer info, and confirmation message
     """
     return block_card(customer_id, reason)
+
+
+@mcp.tool()
+def issue_replacement_card_tool(customer_id: int, expedited_shipping: bool = True) -> dict:
+    """
+    Issues a replacement card for a customer whose previous card was blocked due to fraud or loss.
+    
+    Args:
+        customer_id: The unique identifier of the customer
+        expedited_shipping: Whether to use expedited shipping (default: True)
+        
+    Returns:
+        Dictionary containing status, shipping details, and confirmation message
+    """
+    import json
+    result = issue_replacement_card(customer_id, expedited_shipping)
+    # The function returns a JSON string, so we need to parse it
+    return json.loads(result) if isinstance(result, str) else result
 
 
 @mcp.tool()

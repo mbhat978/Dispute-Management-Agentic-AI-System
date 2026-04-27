@@ -41,27 +41,37 @@ def create_customers(db: Session):
         models.Customer(
             name="John Smith",
             account_tier="Premium",
-            current_account_balance=15000.00
+            current_account_balance=15000.00,
+            card_number="**** **** **** 4921",
+            card_status="Active"
         ),
         models.Customer(
             name="Sarah Johnson",
             account_tier="Gold",
-            current_account_balance=50000.00
+            current_account_balance=50000.00,
+            card_number="**** **** **** 8832",
+            card_status="Active"
         ),
         models.Customer(
             name="Michael Chen",
             account_tier="Basic",
-            current_account_balance=3500.00
+            current_account_balance=3500.00,
+            card_number="**** **** **** 1194",
+            card_status="Active"
         ),
         models.Customer(
             name="Emily Rodriguez",
             account_tier="Premium",
-            current_account_balance=22000.00
+            current_account_balance=22000.00,
+            card_number="**** **** **** 7543",
+            card_status="Active"
         ),
         models.Customer(
             name="David Kumar",
             account_tier="Basic",
-            current_account_balance=5000.00
+            current_account_balance=5000.00,
+            card_number="**** **** **** 0092",
+            card_status="Active"
         )
     ]
     

@@ -186,6 +186,24 @@ def block_card(customer_id: int, reason: str = "Suspected fraud") -> Dict[str, A
     })
 
 
+def issue_replacement_card(customer_id: int, expedited_shipping: bool = True) -> Dict[str, Any]:
+    """
+    Issues a replacement card for a customer whose previous card was blocked due to fraud or loss.
+    
+    Args:
+        customer_id (int): The unique identifier of the customer.
+        expedited_shipping (bool, optional): Whether to use expedited shipping.
+                                            Defaults to True.
+    
+    Returns:
+        Dict[str, Any]: Confirmation of replacement card issuance with shipping details.
+    """
+    return call_mcp_tool('issue_replacement_card_tool', {
+        'customer_id': customer_id,
+        'expedited_shipping': expedited_shipping
+    })
+
+
 def initiate_refund(
     transaction_id: int,
     amount: float,

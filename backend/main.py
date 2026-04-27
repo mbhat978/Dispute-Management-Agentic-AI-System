@@ -380,6 +380,8 @@ async def get_customers(db: Session = Depends(get_db)):
                     "name": customer.name,
                     "account_tier": customer.account_tier,
                     "current_account_balance": customer.current_account_balance,
+                    "card_number": getattr(customer, "card_number", "**** **** **** 1234"),
+                    "card_status": getattr(customer, "card_status", "Active")
                 }
                 for customer in customers
             ],

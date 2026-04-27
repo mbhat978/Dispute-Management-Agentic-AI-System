@@ -400,6 +400,10 @@ def block_card(customer_id: int, reason: str = "Suspected fraud") -> Dict[str, A
                 "message": f"Customer ID {customer_id} not found. Cannot block card."
             }
         
+        # Update database state
+        setattr(customer, 'card_status', "Blocked")
+        db.commit()
+        
         # Simulate blocking the card
         result = {
             "status": "success",
@@ -413,6 +417,40 @@ def block_card(customer_id: int, reason: str = "Suspected fraud") -> Dict[str, A
         
         return result
         
+    finally:
+        db.close()
+
+
+def issue_replacement_card(customer_id: int, expedited_shipping: bool = True) -> str:
+    """
+    Issues a replacement card for a customer whose previous card was blocked due to fraud or loss.
+    """
+    db = SessionLocal()
+    try:
+        customer = db.query(models.Customer).filter(models.Customer.id == customer_id).first()
+        if not customer:
+            return json.dumps({"error": f"Customer ID {customer_id} not found."})
+        
+        import random
+        # Generate a new random last 4 digits
+        new_last_4 = str(random.randint(1000, 9999))
+        new_card_number = f"**** **** **** {new_last_4}"
+        
+        # Update database state
+        customer.card_number = new_card_number
+        customer.card_status = "Active"
+        db.commit()
+        
+        shipping_speed = "1-2 business days (Expedited)" if expedited_shipping else "5-7 business days"
+        
+        return json.dumps({
+            "status": "success",
+            "customer_id": customer_id,
+            "action": "replacement_card_issued",
+            "digital_wallet_updated": True,
+            "shipping_estimate": shipping_speed,
+            "message": f"A new card has been issued to {customer.name}. It has been instantly provisioned to their Apple/Google Wallet. Physical card will arrive in {shipping_speed}."
+        })
     finally:
         db.close()
 
@@ -963,6 +1001,10 @@ def get_available_tools() -> List[Dict[str, str]]:
         {
             "name": "block_card",
             "description": "Block a customer's card due to suspected fraud or security concerns"
+        },
+        {
+            "name": "issue_replacement_card",
+            "description": "Issue a replacement card for a customer whose previous card was blocked due to fraud or loss"
         },
         {
             "name": "initiate_refund",
