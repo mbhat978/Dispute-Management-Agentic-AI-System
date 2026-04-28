@@ -709,15 +709,6 @@ def _execute_decision_actions(
             logger.info(f"[DECISION AGENT] Network chargeback submitted for merchant dispute: {transaction_id}")
             actions_taken.append(f"⚖️ CHARGEBACK: Network claim filed (Visa Code 13.1) to recover ${amount} from merchant.")
             
-        elif category == "merchant_dispute":
-            banking_tools.initiate_refund(transaction_id, amount, "Merchant dispute approved")
-            logger.info(f"[DECISION AGENT] Full refund initiated: ${amount} for merchant dispute {transaction_id}")
-            actions_taken.append(f"💰 REFUNDED: Full amount of ${amount} credited back.")
-            
-            banking_tools.initiate_chargeback(transaction_id, amount, "13.1", "Merchant non-response or service not provided")
-            logger.info(f"[DECISION AGENT] Network chargeback submitted for merchant dispute: {transaction_id}")
-            actions_taken.append(f"⚖️ CHARGEBACK: Network claim filed (Visa Code 13.1) to recover ${amount} from merchant.")
-            
         elif category == "refund_not_received":
             # If approved, escalate directly to a network chargeback
             banking_tools.initiate_chargeback(transaction_id, amount, "4853", "Merchant failed to process refund in timeframe")

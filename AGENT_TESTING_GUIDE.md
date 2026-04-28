@@ -112,11 +112,11 @@ Validate that the system automatically detects and approves obvious fraud cases 
   "transaction_id": 5,
   "customer_id": 1,
   "category": "fraudulent_transaction",
-  "description": "₹25,000 charge in London - I never traveled abroad",
+  "description": "$250 charge in London - I never traveled abroad",
   "additional_context": {
     "customer_location": "Mumbai, India",
     "transaction_location": "London, UK",
-    "amount": 25000,
+    "amount": 250,
     "merchant": "Harrods Department Store"
   }
 }
@@ -142,7 +142,7 @@ Validate that the system automatically detects and approves obvious fraud cases 
 - ✅ Decision: **APPROVE** (refund customer)
 - ✅ Actions:
   - Calls `block_card(1, "Suspected fraud")`
-  - Calls `initiate_refund(5, 25000, "Fraudulent transaction")`
+  - Calls `initiate_refund(5, 250, "Fraudulent transaction")`
   - Calls `issue_replacement_card(1, expedited=True)`
 - ✅ Status: `resolved` (auto-decision, no human needed)
 - ✅ Reasoning: "High fraud risk score (85/100). International transaction with no travel history. Card blocked and refund initiated."
@@ -169,7 +169,7 @@ SELECT * FROM audit_trail WHERE dispute_id = <dispute_id> ORDER BY timestamp;
   "description": "5 transactions in 30 minutes - my card was stolen",
   "additional_context": {
     "transactions_in_hour": 5,
-    "total_amount": 45000,
+    "total_amount": 450,
     "locations": ["Delhi", "Mumbai", "Bangalore", "Chennai", "Kolkata"]
   }
 }
@@ -200,7 +200,7 @@ Validate that merchant disputes require human review due to insufficient clarity
   "description": "Ordered iPhone from Amazon, never received it",
   "additional_context": {
     "merchant": "Amazon India",
-    "amount": 79999,
+    "amount": 799.99,
     "order_date": "2024-01-15",
     "expected_delivery": "2024-01-20",
     "tracking_number": "TRK123456"
@@ -252,7 +252,7 @@ SELECT * FROM dispute_tickets WHERE transaction_id = 15;
   "description": "Ordered gadget, received empty box",
   "additional_context": {
     "merchant": "ShopXYZ Online",
-    "amount": 15000
+    "amount": 150
   }
 }
 ```
@@ -279,10 +279,10 @@ Validate ATM log checking and technical fault detection.
   "transaction_id": 25,
   "customer_id": 5,
   "category": "atm_dispute",
-  "description": "ATM debited ₹10,000 but no cash came out",
+  "description": "ATM debited $100 but no cash came out",
   "additional_context": {
     "atm_id": "ATM_001",
-    "amount": 10000,
+    "amount": 100,
     "time": "2024-01-20T14:30:00Z"
   }
 }
@@ -298,7 +298,7 @@ Validate ATM log checking and technical fault detection.
 **Decision Agent:**
 - ✅ Decision: **APPROVE**
 - ✅ Reasoning: "ATM logs confirm dispense fault. No cash dispensed."
-- ✅ Actions: `initiate_refund(25, 10000, "ATM hardware fault")`
+- ✅ Actions: `initiate_refund(25, 100, "ATM hardware fault")`
 
 ### Test Case 3.2: ATM - Cash Dispensed Successfully
 
@@ -310,7 +310,7 @@ Validate ATM log checking and technical fault detection.
   "category": "atm_dispute",
   "description": "Claiming ATM didn't give cash",
   "additional_context": {
-    "amount": 5000
+    "amount": 50
   }
 }
 ```
@@ -338,7 +338,7 @@ Validate duplicate transaction detection.
   "description": "Charged twice for same restaurant bill",
   "additional_context": {
     "merchant": "Taj Restaurant",
-    "amount": 2500,
+    "amount": 25,
     "date": "2024-01-20"
   }
 }
@@ -347,13 +347,13 @@ Validate duplicate transaction detection.
 **Expected Agent Behavior:**
 
 **Investigator Agent:**
-- ✅ Calls `check_duplicate_transactions(7, "Taj Restaurant", 2500, "2024-01-20", 24)`
+- ✅ Calls `check_duplicate_transactions(7, "Taj Restaurant", 25, "2024-01-20", 24)`
 - ✅ Finds: 2 identical transactions within 5 minutes
 - ✅ Evidence: Clear duplicate
 
 **Decision Agent:**
 - ✅ Decision: **APPROVE**
-- ✅ Actions: `initiate_refund(35, 2500, "Duplicate transaction")`
+- ✅ Actions: `initiate_refund(35, 25, "Duplicate transaction")`
 - ✅ Reasoning: "Found duplicate transaction for same merchant and amount within 5 minutes."
 
 ---
@@ -371,11 +371,11 @@ Validate receipt analysis and amount verification.
   "transaction_id": 40,
   "customer_id": 8,
   "category": "incorrect_amount",
-  "description": "Charged ₹5,000 but receipt shows ₹4,500",
+  "description": "Charged $50 but receipt shows $45",
   "additional_context": {
     "merchant": "Electronics Store",
-    "billed_amount": 5000,
-    "claimed_amount": 4500,
+    "billed_amount": 50,
+    "claimed_amount": 45,
     "receipt_image": "base64_encoded_receipt_data"
   }
 }
@@ -385,14 +385,14 @@ Validate receipt analysis and amount verification.
 
 **Investigator Agent:**
 - ✅ Calls `analyze_receipt_evidence(receipt_base64, "Electronics Store")`
-- ✅ OCR extracts: `amount: 4500`, `merchant: "Electronics Store"`
-- ✅ Calls `verify_receipt_amount(40, 4500)`
-- ✅ Discrepancy: ₹500 overcharge
+- ✅ OCR extracts: `amount: 45`, `merchant: "Electronics Store"`
+- ✅ Calls `verify_receipt_amount(40, 45)`
+- ✅ Discrepancy: $5 overcharge
 
 **Decision Agent:**
 - ✅ Decision: **APPROVE** (partial refund)
-- ✅ Actions: `initiate_refund(40, 500, "Overcharged - receipt verified")`
-- ✅ Reasoning: "Receipt analysis confirms customer was overcharged by ₹500."
+- ✅ Actions: `initiate_refund(40, 5, "Overcharged - receipt verified")`
+- ✅ Reasoning: "Receipt analysis confirms customer was overcharged by $5."
 
 ---
 
@@ -412,7 +412,7 @@ Validate subscription cancellation verification.
   "description": "Cancelled Netflix in December but charged in January",
   "additional_context": {
     "merchant": "Netflix",
-    "amount": 799,
+    "amount": 15.99,
     "cancellation_date": "2023-12-15",
     "charge_date": "2024-01-15"
   }
@@ -423,14 +423,14 @@ Validate subscription cancellation verification.
 
 **Investigator Agent:**
 - ✅ Calls `check_subscription_status(9, "Netflix")`
-- ✅ Detects: Recurring monthly subscription (₹799)
+- ✅ Detects: Recurring monthly subscription ($15.99)
 - ✅ Calls `verify_subscription_cancellation(9, "Netflix", "2023-12-15")`
 - ✅ Finds: Charge occurred 31 days after claimed cancellation
 - ✅ Evidence: Cancellation claim appears valid
 
 **Decision Agent:**
 - ✅ Decision: **APPROVE**
-- ✅ Actions: `initiate_refund(45, 799, "Subscription charged after cancellation")`
+- ✅ Actions: `initiate_refund(45, 15.99, "Subscription charged after cancellation")`
 - ✅ Reasoning: "Customer cancelled subscription on 2023-12-15 but was charged on 2024-01-15. Approve refund."
 
 ### Test Case 6.2: Active Subscription - No Cancellation
@@ -444,7 +444,7 @@ Validate subscription cancellation verification.
   "description": "I don't recognize this charge",
   "additional_context": {
     "merchant": "Spotify",
-    "amount": 119
+    "amount": 10.99
   }
 }
 ```
@@ -471,10 +471,10 @@ Validate loan EMI verification.
   "customer_id": 11,
   "category": "loan_dispute",
   "subcategory": "emi_amount_error",
-  "description": "Charged ₹15,000 EMI but should be ₹12,000",
+  "description": "Charged $1500 EMI but should be $1200",
   "additional_context": {
-    "expected_emi": 12000,
-    "charged_emi": 15000
+    "expected_emi": 1200,
+    "charged_emi": 1500
   }
 }
 ```
@@ -484,13 +484,13 @@ Validate loan EMI verification.
 **Investigator Agent:**
 - ✅ Calls `get_loan_details(11)`
 - ✅ Retrieves: EMI schedule, outstanding balance
-- ✅ Verifies: Actual EMI is ₹12,000
-- ✅ Discrepancy: ₹3,000 overcharge
+- ✅ Verifies: Actual EMI is $1200
+- ✅ Discrepancy: $300 overcharge
 
 **Decision Agent:**
 - ✅ Decision: **APPROVE**
-- ✅ Actions: `initiate_refund(55, 3000, "EMI overcharge")`
-- ✅ Reasoning: "Loan records confirm EMI should be ₹12,000. Customer overcharged by ₹3,000."
+- ✅ Actions: `initiate_refund(55, 300, "EMI overcharge")`
+- ✅ Reasoning: "Loan records confirm EMI should be $1200. Customer overcharged by $300."
 
 ---
 
@@ -510,7 +510,7 @@ Validate refund timeline tracking and escalation.
   "description": "Merchant promised refund 10 days ago, still not received",
   "additional_context": {
     "merchant": "Fashion Store",
-    "amount": 3500,
+    "amount": 35,
     "refund_promised_date": "2024-01-10"
   }
 }
@@ -526,7 +526,7 @@ Validate refund timeline tracking and escalation.
 
 **Decision Agent:**
 - ✅ Decision: **APPROVE** (escalate to chargeback)
-- ✅ Actions: `initiate_chargeback(60, 3500, "4853", "Merchant failed to refund within 7 days")`
+- ✅ Actions: `initiate_chargeback(60, 35, "4853", "Merchant failed to refund within 7 days")`
 - ✅ Reasoning: "Merchant refund delayed >7 days. Escalating to chargeback."
 
 ### Test Case 8.2: Bank Processing Delay (>14 days)
@@ -555,7 +555,7 @@ Validate handling of subjective disputes.
   "description": "Received damaged product, merchant refusing refund",
   "additional_context": {
     "merchant": "Electronics Mart",
-    "amount": 25000,
+    "amount": 250,
     "evidence": "photos_of_damage.jpg"
   }
 }
@@ -591,7 +591,7 @@ Validate chargeback initiation for merchant disputes.
   "description": "Merchant not responding to refund request for 15 days",
   "additional_context": {
     "merchant": "Online Gadgets",
-    "amount": 18000,
+    "amount": 180,
     "days_elapsed": 15
   }
 }
@@ -601,7 +601,7 @@ Validate chargeback initiation for merchant disputes.
 
 **Decision Agent:**
 - ✅ Decision: **APPROVE** (chargeback)
-- ✅ Actions: `initiate_chargeback(70, 18000, "4855", "Merchant non-response >14 days")`
+- ✅ Actions: `initiate_chargeback(70, 180, "4855", "Merchant non-response >14 days")`
 - ✅ Reasoning: "Merchant failed to respond within 14 days. Initiating chargeback per policy."
 
 ---
@@ -681,7 +681,7 @@ Validate chargeback initiation for merchant disputes.
 3. ✅ Insufficient evidence to make decision
 4. ✅ Confidence score <60%
 5. ✅ Evidence quality score <0.5
-6. ✅ High-value disputes (>₹50,000)
+6. ✅ High-value disputes (>$10,000)
 7. ✅ Complex multi-party disputes
 
 ---

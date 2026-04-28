@@ -89,7 +89,7 @@ def create_customers(db: Session):
         models.Customer(
             name="Priya Sharma",
             account_tier="Premium",
-            current_account_balance=125000.00,
+            current_account_balance=12500.00,
             card_number="**** **** **** 9876",
             card_status="Active"
         ),
@@ -97,7 +97,7 @@ def create_customers(db: Session):
         models.Customer(
             name="Rahul Verma",
             account_tier="Gold",
-            current_account_balance=85000.00,
+            current_account_balance=8500.00,
             card_number="**** **** **** 5432",
             card_status="Active"
         ),
@@ -105,7 +105,7 @@ def create_customers(db: Session):
         models.Customer(
             name="Ananya Patel",
             account_tier="Basic",
-            current_account_balance=15000.00,
+            current_account_balance=1500.00,
             card_number="**** **** **** 3210",
             card_status="Active"
         ),
@@ -113,7 +113,7 @@ def create_customers(db: Session):
         models.Customer(
             name="Vikram Singh",
             account_tier="Premium",
-            current_account_balance=250000.00,
+            current_account_balance=25000.00,
             card_number="**** **** **** 6789",
             card_status="Active"
         ),
@@ -121,7 +121,7 @@ def create_customers(db: Session):
         models.Customer(
             name="Meera Reddy",
             account_tier="Gold",
-            current_account_balance=65000.00,
+            current_account_balance=6500.00,
             card_number="**** **** **** 1357",
             card_status="Active"
         ),
@@ -129,7 +129,7 @@ def create_customers(db: Session):
         models.Customer(
             name="Arjun Kumar",
             account_tier="Basic",
-            current_account_balance=8000.00,
+            current_account_balance=800.00,
             card_number="**** **** **** 2468",
             card_status="Active"
         ),
@@ -137,7 +137,7 @@ def create_customers(db: Session):
         models.Customer(
             name="Sneha Iyer",
             account_tier="Gold",
-            current_account_balance=95000.00,
+            current_account_balance=9500.00,
             card_number="**** **** **** 3579",
             card_status="Active"
         ),
@@ -145,7 +145,7 @@ def create_customers(db: Session):
         models.Customer(
             name="Karthik Menon",
             account_tier="Premium",
-            current_account_balance=180000.00,
+            current_account_balance=18000.00,
             card_number="**** **** **** 4680",
             card_status="Active"
         )
@@ -156,7 +156,7 @@ def create_customers(db: Session):
     
     for customer in customers:
         db.refresh(customer)
-        print(f"  ✓ {customer.name} (ID: {customer.id}, Tier: {customer.account_tier}, Balance: ₹{customer.current_account_balance:,.2f})")
+        print(f"  ✓ {customer.name} (ID: {customer.id}, Tier: {customer.account_tier}, Balance: ${customer.current_account_balance:,.2f})")
     
     return customers
 
@@ -168,28 +168,28 @@ def create_loan_accounts(db: Session, customers):
     loan_accounts = [
         models.LoanAccount(
             customer_id=customers[0].id,  # John Smith
-            monthly_emi_amount=5000.00,
-            total_outstanding=150000.00
+            monthly_emi_amount=500.00,
+            total_outstanding=15000.00
         ),
         models.LoanAccount(
             customer_id=customers[1].id,  # Sarah Johnson
-            monthly_emi_amount=8500.00,
-            total_outstanding=280000.00
+            monthly_emi_amount=850.00,
+            total_outstanding=28000.00
         ),
         models.LoanAccount(
             customer_id=customers[5].id,  # Priya Sharma
-            monthly_emi_amount=12000.00,
-            total_outstanding=350000.00
+            monthly_emi_amount=1200.00,
+            total_outstanding=35000.00
         ),
         models.LoanAccount(
             customer_id=customers[8].id,  # Vikram Singh
-            monthly_emi_amount=25000.00,
-            total_outstanding=850000.00
+            monthly_emi_amount=2500.00,
+            total_outstanding=85000.00
         ),
         models.LoanAccount(
             customer_id=customers[12].id,  # Karthik Menon
-            monthly_emi_amount=8500.00,
-            total_outstanding=180000.00
+            monthly_emi_amount=850.00,
+            total_outstanding=18000.00
         )
     ]
     
@@ -199,7 +199,7 @@ def create_loan_accounts(db: Session, customers):
     for loan in loan_accounts:
         db.refresh(loan)
         customer = db.query(models.Customer).filter(models.Customer.id == loan.customer_id).first()
-        print(f"  ✓ Loan ID: {loan.id} - {customer.name if customer else 'Unknown'}, EMI: ₹{loan.monthly_emi_amount:,.2f}, Outstanding: ₹{loan.total_outstanding:,.2f}")
+        print(f"  ✓ Loan ID: {loan.id} - {customer.name if customer else 'Unknown'}, EMI: ${loan.monthly_emi_amount:,.2f}, Outstanding: ${loan.total_outstanding:,.2f}")
     
     return loan_accounts
 
@@ -219,7 +219,7 @@ def create_test_scenario_transactions(db: Session, customers):
     # 1.1: High-value international transaction (London)
     trans1 = models.Transaction(
         customer_id=customers[5].id,  # Priya Sharma (Customer 6)
-        amount=25000.00,
+        amount=250.00,
         merchant_name="Harrods Department Store",
         transaction_date=base_time + timedelta(days=1, hours=14),
         status="success",
@@ -231,7 +231,7 @@ def create_test_scenario_transactions(db: Session, customers):
     db.commit()
     db.refresh(trans1)
     transactions.append(trans1)
-    print(f"    ✓ ID {trans1.id}: ₹{trans1.amount:,.2f} to {trans1.merchant_name} (London, UK)")
+    print(f"    ✓ ID {trans1.id}: ${trans1.amount:,.2f} to {trans1.merchant_name} (London, UK)")
     
     # 1.2: Velocity fraud - Multiple transactions in 30 minutes
     velocity_time = base_time + timedelta(days=2, hours=10)
@@ -247,7 +247,7 @@ def create_test_scenario_transactions(db: Session, customers):
     for i, (merchant, location) in enumerate(velocity_merchants):
         trans = models.Transaction(
             customer_id=customers[6].id,  # Rahul Verma (Customer 7)
-            amount=9000.00,
+            amount=90.00,
             merchant_name=merchant,
             transaction_date=velocity_time + timedelta(minutes=i*6),
             status="success",
@@ -259,7 +259,7 @@ def create_test_scenario_transactions(db: Session, customers):
         db.commit()
         db.refresh(trans)
         transactions.append(trans)
-        print(f"    ✓ ID {trans.id}: ₹{trans.amount:,.2f} to {merchant} ({location})")
+        print(f"    ✓ ID {trans.id}: ${trans.amount:,.2f} to {merchant} ({location})")
     
     # ========================================================================
     # SCENARIO 2: MERCHANT DISPUTE - ITEM NOT DELIVERED (Human-in-Loop)
@@ -269,7 +269,7 @@ def create_test_scenario_transactions(db: Session, customers):
     # 2.1: Amazon order not delivered
     trans_amazon = models.Transaction(
         customer_id=customers[7].id,  # Ananya Patel (Customer 8)
-        amount=79999.00,
+        amount=799.99,
         merchant_name="Amazon India",
         transaction_date=base_time + timedelta(days=5, hours=11),
         status="success",
@@ -281,12 +281,12 @@ def create_test_scenario_transactions(db: Session, customers):
     db.commit()
     db.refresh(trans_amazon)
     transactions.append(trans_amazon)
-    print(f"    ✓ ID {trans_amazon.id}: ₹{trans_amazon.amount:,.2f} to {trans_amazon.merchant_name} (iPhone 15 Pro)")
+    print(f"    ✓ ID {trans_amazon.id}: ${trans_amazon.amount:,.2f} to {trans_amazon.merchant_name} (iPhone 15 Pro)")
     
     # 2.2: High-risk merchant - empty box received
     trans_shady = models.Transaction(
         customer_id=customers[8].id,  # Vikram Singh (Customer 9)
-        amount=15000.00,
+        amount=150.00,
         merchant_name="ShopXYZ Online",
         transaction_date=base_time + timedelta(days=6, hours=15),
         status="success",
@@ -298,7 +298,7 @@ def create_test_scenario_transactions(db: Session, customers):
     db.commit()
     db.refresh(trans_shady)
     transactions.append(trans_shady)
-    print(f"    ✓ ID {trans_shady.id}: ₹{trans_shady.amount:,.2f} to {trans_shady.merchant_name} (Laptop - Empty Box)")
+    print(f"    ✓ ID {trans_shady.id}: ${trans_shady.amount:,.2f} to {trans_shady.merchant_name} (Laptop - Empty Box)")
     
     # ========================================================================
     # SCENARIO 3: ATM DISPUTE - CASH NOT DISPENSED
@@ -308,7 +308,7 @@ def create_test_scenario_transactions(db: Session, customers):
     # 3.1: ATM hardware fault
     trans_atm_fault = models.Transaction(
         customer_id=customers[9].id,  # Meera Reddy (Customer 10)
-        amount=10000.00,
+        amount=100.00,
         merchant_name="ATM Withdrawal",
         transaction_date=base_time + timedelta(days=7, hours=14, minutes=30),
         status="failed",
@@ -329,12 +329,12 @@ def create_test_scenario_transactions(db: Session, customers):
     )
     db.add(atm_log_fault)
     db.commit()
-    print(f"    ✓ ID {trans_atm_fault.id}: ₹{trans_atm_fault.amount:,.2f} ATM Withdrawal (FAULT - No cash dispensed)")
+    print(f"    ✓ ID {trans_atm_fault.id}: ${trans_atm_fault.amount:,.2f} ATM Withdrawal (FAULT - No cash dispensed)")
     
     # 3.2: ATM success (for comparison)
     trans_atm_success = models.Transaction(
         customer_id=customers[9].id,  # Meera Reddy (Customer 10)
-        amount=5000.00,
+        amount=50.00,
         merchant_name="ATM Withdrawal",
         transaction_date=base_time + timedelta(days=8, hours=10),
         status="success",
@@ -354,7 +354,7 @@ def create_test_scenario_transactions(db: Session, customers):
     )
     db.add(atm_log_success)
     db.commit()
-    print(f"    ✓ ID {trans_atm_success.id}: ₹{trans_atm_success.amount:,.2f} ATM Withdrawal (SUCCESS)")
+    print(f"    ✓ ID {trans_atm_success.id}: ${trans_atm_success.amount:,.2f} ATM Withdrawal (SUCCESS)")
     
     # ========================================================================
     # SCENARIO 4: DUPLICATE TRANSACTION
@@ -365,7 +365,7 @@ def create_test_scenario_transactions(db: Session, customers):
     
     trans_dup1 = models.Transaction(
         customer_id=customers[11].id,  # Sneha Iyer (Customer 12)
-        amount=2500.00,
+        amount=25.00,
         merchant_name="Taj Restaurant",
         transaction_date=duplicate_time,
         status="success",
@@ -380,7 +380,7 @@ def create_test_scenario_transactions(db: Session, customers):
     
     trans_dup2 = models.Transaction(
         customer_id=customers[11].id,  # Sneha Iyer (Customer 12)
-        amount=2500.00,
+        amount=25.00,
         merchant_name="Taj Restaurant",
         transaction_date=duplicate_time + timedelta(minutes=5),
         status="success",
@@ -393,8 +393,8 @@ def create_test_scenario_transactions(db: Session, customers):
     db.refresh(trans_dup2)
     transactions.append(trans_dup2)
     
-    print(f"    ✓ ID {trans_dup1.id}: ₹{trans_dup1.amount:,.2f} to {trans_dup1.merchant_name}")
-    print(f"    ✓ ID {trans_dup2.id}: ₹{trans_dup2.amount:,.2f} to {trans_dup2.merchant_name} (5 min later - DUPLICATE)")
+    print(f"    ✓ ID {trans_dup1.id}: ${trans_dup1.amount:,.2f} to {trans_dup1.merchant_name}")
+    print(f"    ✓ ID {trans_dup2.id}: ${trans_dup2.amount:,.2f} to {trans_dup2.merchant_name} (5 min later - DUPLICATE)")
     
     # ========================================================================
     # SCENARIO 5: INCORRECT AMOUNT - OVERCHARGED
@@ -403,7 +403,7 @@ def create_test_scenario_transactions(db: Session, customers):
     
     trans_overcharge = models.Transaction(
         customer_id=customers[12].id,  # Karthik Menon (Customer 13)
-        amount=5000.00,
+        amount=50.00,
         merchant_name="Electronics Store",
         transaction_date=base_time + timedelta(days=12, hours=16),
         status="success",
@@ -415,7 +415,7 @@ def create_test_scenario_transactions(db: Session, customers):
     db.commit()
     db.refresh(trans_overcharge)
     transactions.append(trans_overcharge)
-    print(f"    ✓ ID {trans_overcharge.id}: ₹{trans_overcharge.amount:,.2f} to {trans_overcharge.merchant_name} (Receipt shows ₹4,500)")
+    print(f"    ✓ ID {trans_overcharge.id}: ${trans_overcharge.amount:,.2f} to {trans_overcharge.merchant_name} (Receipt shows $45.00)")
     
     # ========================================================================
     # SCENARIO 6: SUBSCRIPTION DISPUTE - UNAUTHORIZED RECURRING CHARGE
@@ -429,7 +429,7 @@ def create_test_scenario_transactions(db: Session, customers):
     for month in range(12):
         trans_netflix = models.Transaction(
             customer_id=customers[9].id,  # Meera Reddy (Customer 10)
-            amount=799.00,
+            amount=15.99,
             merchant_name="Netflix",
             transaction_date=subscription_start + timedelta(days=30*month),
             status="success",
@@ -445,7 +445,7 @@ def create_test_scenario_transactions(db: Session, customers):
     # Disputed charge (after claimed cancellation on day 330)
     trans_netflix_disputed = models.Transaction(
         customer_id=customers[9].id,  # Meera Reddy (Customer 10)
-        amount=799.00,
+        amount=15.99,
         merchant_name="Netflix",
         transaction_date=subscription_start + timedelta(days=360),
         status="success",
@@ -457,13 +457,13 @@ def create_test_scenario_transactions(db: Session, customers):
     db.commit()
     db.refresh(trans_netflix_disputed)
     transactions.append(trans_netflix_disputed)
-    print(f"    ✓ ID {trans_netflix_disputed.id}: ₹{trans_netflix_disputed.amount:,.2f} to Netflix (Cancelled on day 330, charged on day 360)")
+    print(f"    ✓ ID {trans_netflix_disputed.id}: ${trans_netflix_disputed.amount:,.2f} to Netflix (Cancelled on day 330, charged on day 360)")
     
     # 6.2: Spotify - Active subscription (no cancellation)
     for month in range(12):
         trans_spotify = models.Transaction(
             customer_id=customers[10].id,  # Arjun Kumar (Customer 11)
-            amount=119.00,
+            amount=10.99,
             merchant_name="Spotify",
             transaction_date=subscription_start + timedelta(days=30*month),
             status="success",
@@ -485,7 +485,7 @@ def create_test_scenario_transactions(db: Session, customers):
     
     trans_emi_wrong = models.Transaction(
         customer_id=customers[5].id,  # Priya Sharma (Customer 6, has loan with EMI ₹12,000)
-        amount=15000.00,  # Charged ₹15,000 instead of ₹12,000
+        amount=1500.00,  # Charged $1500 instead of $1200
         merchant_name="Loan EMI Payment",
         transaction_date=base_time + timedelta(days=15, hours=9),
         status="success",
@@ -497,7 +497,7 @@ def create_test_scenario_transactions(db: Session, customers):
     db.commit()
     db.refresh(trans_emi_wrong)
     transactions.append(trans_emi_wrong)
-    print(f"    ✓ ID {trans_emi_wrong.id}: ₹{trans_emi_wrong.amount:,.2f} EMI (Should be ₹12,000 - Overcharged ₹3,000)")
+    print(f"    ✓ ID {trans_emi_wrong.id}: ${trans_emi_wrong.amount:,.2f} EMI (Should be $1200 - Overcharged $300)")
     
     # ========================================================================
     # SCENARIO 8: REFUND NOT RECEIVED
@@ -507,7 +507,7 @@ def create_test_scenario_transactions(db: Session, customers):
     # 8.1: Merchant refund delayed >7 days
     trans_refund_delayed = models.Transaction(
         customer_id=customers[7].id,  # Ananya Patel (Customer 8)
-        amount=3500.00,
+        amount=35.00,
         merchant_name="Fashion Store",
         transaction_date=base_time + timedelta(days=8, hours=14),
         status="success",
@@ -519,7 +519,7 @@ def create_test_scenario_transactions(db: Session, customers):
     db.commit()
     db.refresh(trans_refund_delayed)
     transactions.append(trans_refund_delayed)
-    print(f"    ✓ ID {trans_refund_delayed.id}: ₹{trans_refund_delayed.amount:,.2f} to {trans_refund_delayed.merchant_name} (Refund promised 10 days ago)")
+    print(f"    ✓ ID {trans_refund_delayed.id}: ${trans_refund_delayed.amount:,.2f} to {trans_refund_delayed.merchant_name} (Refund promised 10 days ago)")
     
     # ========================================================================
     # SCENARIO 9: QUALITY/SERVICE DISPUTE
@@ -528,7 +528,7 @@ def create_test_scenario_transactions(db: Session, customers):
     
     trans_quality = models.Transaction(
         customer_id=customers[8].id,  # Vikram Singh (Customer 9)
-        amount=25000.00,
+        amount=250.00,
         merchant_name="Electronics Mart",
         transaction_date=base_time + timedelta(days=18, hours=11),
         status="success",
@@ -540,7 +540,7 @@ def create_test_scenario_transactions(db: Session, customers):
     db.commit()
     db.refresh(trans_quality)
     transactions.append(trans_quality)
-    print(f"    ✓ ID {trans_quality.id}: ₹{trans_quality.amount:,.2f} to {trans_quality.merchant_name} (Damaged product)")
+    print(f"    ✓ ID {trans_quality.id}: ${trans_quality.amount:,.2f} to {trans_quality.merchant_name} (Damaged product)")
     
     # ========================================================================
     # SCENARIO 10: CHARGEBACK SCENARIO
@@ -549,7 +549,7 @@ def create_test_scenario_transactions(db: Session, customers):
     
     trans_chargeback = models.Transaction(
         customer_id=customers[6].id,  # Rahul Verma (Customer 7)
-        amount=18000.00,
+        amount=180.00,
         merchant_name="Online Gadgets",
         transaction_date=base_time + timedelta(days=5, hours=10),
         status="success",
@@ -561,7 +561,7 @@ def create_test_scenario_transactions(db: Session, customers):
     db.commit()
     db.refresh(trans_chargeback)
     transactions.append(trans_chargeback)
-    print(f"    ✓ ID {trans_chargeback.id}: ₹{trans_chargeback.amount:,.2f} to {trans_chargeback.merchant_name} (Merchant not responding for 15 days)")
+    print(f"    ✓ ID {trans_chargeback.id}: ${trans_chargeback.amount:,.2f} to {trans_chargeback.merchant_name} (Merchant not responding for 15 days)")
     
     # ========================================================================
     # ADDITIONAL: Normal transactions for context
