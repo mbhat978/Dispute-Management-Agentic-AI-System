@@ -122,7 +122,7 @@ def _get_delivery_recommendation(status: str) -> str:
     return recommendations.get(status, "Unknown status. Route to human review.")
 
 
-def get_merchant_dispute_history(merchant_name: str, days: int = 90) -> Dict[str, Any]:
+def get_merchant_dispute_history(merchant_name: str, days: int = 180) -> Dict[str, Any]:
     """
     Get historical dispute data for a specific merchant
     
@@ -230,22 +230,23 @@ def check_merchant_reputation_score(merchant_name: str) -> Dict[str, Any]:
         total_disputes = history.get("total_disputes", 0)
         approval_rate = history.get("approval_rate", 0)
         
-        # Penalty for high dispute volume
-        if total_disputes > 50:
-            base_score -= 40
-        elif total_disputes > 20:
-            base_score -= 30
-        elif total_disputes > 10:
-            base_score -= 25
-        
-        # Penalty for high approval rate (means customer is usually right)
-        if approval_rate > 80:
-            base_score -= 40
-        elif approval_rate > 60:
-            base_score -= 25
-        elif approval_rate > 40:
-            base_score -= 15
-        
+        if total_disputes > 0:
+            # Volume penalty
+            if total_disputes > 50:
+                base_score -= 30
+            elif total_disputes > 20:
+                base_score -= 20
+            elif total_disputes > 5:  # Lowered threshold to catch smaller historical sets
+                base_score -= 15
+            
+            # Severe penalty for high approval rate (meaning the merchant loses most disputes)
+            if approval_rate >= 80:
+                base_score -= 60
+            elif approval_rate >= 60:
+                base_score -= 40
+            elif approval_rate >= 40:
+                base_score -= 20
+                
         reputation_score = max(0, base_score)
         
         # Determine trust level

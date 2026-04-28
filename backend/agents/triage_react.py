@@ -55,7 +55,7 @@ def _rule_based_triage_fallback(state: DisputeState) -> Dict[str, Any]:
         category = "fraud"
     elif any(term in query_lower for term in ["duplicate", "charged twice", "double charge", "multiple charge"]):
         category = "duplicate"
-    elif any(term in query_lower for term in ["merchant", "service", "product", "goods", "refund"]):
+    elif any(term in query_lower for term in ["merchant", "service", "product", "goods", "refund", "empty box", "wrong item", "nothing in package", "not received", "didn't receive"]):
         category = "merchant_dispute"
     elif any(term in query_lower for term in ["failed", "declined", "error", "not completed", "deducted"]):
         category = "failed_transaction"
@@ -133,6 +133,11 @@ Instructions:
 3. CLASSIFY: Select the most appropriate category
 4. ASSESS: Evaluate your confidence in this classification (0.0 to 1.0)
 5. EXPLAIN: Provide clear reasoning for your decision
+
+IMPORTANT CLASSIFICATION RULES:
+- Claims of receiving an "empty box", "wrong item", or "nothing in package" should be classified as 'merchant_dispute' (not quality_dispute)
+- These indicate a fundamental failure in the merchant's fulfillment, not just product quality issues
+- Quality disputes are for defective/damaged items that were actually received
 
 Respond ONLY with valid JSON in this exact format:
 {{

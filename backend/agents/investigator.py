@@ -589,29 +589,23 @@ def _sanitize_plan(
         elif tool_name == "get_delivery_tracking_status":
             tool_input = {"transaction_id": transaction_id}
         elif tool_name == "check_subscription_status":
-            # Merchant name will be injected during sequential execution
-            tool_input = {"customer_id": customer_id, "merchant_name": tool_input.get("merchant_name", "")}
+            tool_input = {"customer_id": customer_id, "merchant_name": ""}
         elif tool_name == "verify_subscription_cancellation":
-            # Use cancellation_date from LLM input, or default to 30 days ago
             cancellation_date = tool_input.get("cancellation_date", "")
             if not cancellation_date:
-                # Default to 30 days ago if not specified
                 from datetime import datetime, timedelta
                 cancellation_date = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
-            # Merchant name will be injected during sequential execution
             tool_input = {
                 "customer_id": customer_id,
-                "merchant_name": tool_input.get("merchant_name", ""),
+                "merchant_name": "",
                 "cancellation_date": cancellation_date
             }
         elif tool_name == "get_refund_timeline":
             tool_input = {"transaction_id": transaction_id}
         elif tool_name == "check_merchant_reputation_score":
-            # Merchant name will be injected during sequential execution
-            tool_input = {"merchant_name": tool_input.get("merchant_name", "")}
+            tool_input = {"merchant_name": ""}
         elif tool_name == "get_merchant_dispute_history":
-            # Merchant name will be injected during sequential execution
-            tool_input = {"merchant_name": tool_input.get("merchant_name", "")}
+            tool_input = {"merchant_name": ""}
 
         if data_key == "transaction_details" and "transaction_details" in prior_gathered_data:
             continue
