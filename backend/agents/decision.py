@@ -729,6 +729,15 @@ def _execute_decision_actions(
             actions_taken.append(f"⚖️ CHARGEBACK: Network claim filed (Code 4853) to recover ${amount} due to unreceived refund.")
             # Note: We do not call initiate_refund here yet; customer must wait for provisional credit batch job
             
+        elif category == "subscription_cancellation":
+            banking_tools.initiate_refund(transaction_id, amount, "Subscription charged after cancellation")
+            logger.info(f"[DECISION AGENT] Full refund initiated: ${amount} for subscription cancellation {transaction_id}")
+            actions_taken.append(f"💰 REFUNDED: Full amount of ${amount} credited back.")
+            
+            banking_tools.initiate_chargeback(transaction_id, amount, "13.7", "Cancelled Recurring Transaction")
+            logger.info(f"[DECISION AGENT] Network chargeback submitted for cancelled subscription: {transaction_id}")
+            actions_taken.append(f"⚖️ CHARGEBACK: Network claim filed (Visa Code 13.7) to recover ${amount} from merchant for cancelled subscription.")
+            
         elif category in {"atm_failure", "duplicate", "failed_transaction"}:
             banking_tools.initiate_refund(transaction_id, amount, f"{category} dispute approved")
             logger.info(f"[DECISION AGENT] Full refund initiated: ${amount} for {category} transaction {transaction_id}")

@@ -365,6 +365,29 @@ def create_test_scenario_transactions(db: Session, customers):
     transactions.append(trans_netflix_disputed)
     print(f"    ✓ ID {trans_netflix_disputed.id}: ${trans_netflix_disputed.amount:,.2f} to Netflix (Cancelled on day 330, charged on day 360)")
     
+    # Test Case 6.2: Active Spotify subscription (no cancellation) - for comparison
+    print("\n  📍 Scenario 6.2: Active Subscription - Spotify (No Cancellation)")
+    spotify_start = base_time - timedelta(days=330)
+    
+    # Create 12 months of Spotify charges (active subscription)
+    for month in range(12):
+        trans_spotify = models.Transaction(
+            customer_id=customers[3].id,  # Vikram Singh
+            amount=10.99,
+            merchant_name="Spotify",
+            transaction_date=spotify_start + timedelta(days=30*month),
+            status="success",
+            is_international=False,
+            refunded_amount=0.0,
+            transaction_type="debit"
+        )
+        db.add(trans_spotify)
+        db.commit()
+        db.refresh(trans_spotify)
+        transactions.append(trans_spotify)
+    
+    print(f"    ✓ Created 12 Spotify charges for {customers[3].name} (Active subscription - no cancellation)")
+    
     # ========================================================================
     # SCENARIO 7: LOAN/EMI DISPUTE (Customer 4)
     # ========================================================================
