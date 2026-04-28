@@ -551,14 +551,14 @@ def get_delivery_tracking_status_tool(transaction_id: int, tracking_number: Opti
 
 
 @mcp.tool()
-def get_merchant_dispute_history_tool(merchant_name: str, days: int = 90) -> dict:
+def get_merchant_dispute_history_tool(merchant_name: str, days: int = 180) -> dict:
     """
     Get historical dispute data for a specific merchant to identify patterns.
     Use this to assess merchant reliability and dispute trends.
     
     Args:
         merchant_name: Name of the merchant
-        days: Number of days to look back (default 90)
+        days: Number of days to look back (default 180)
     """
     return get_merchant_dispute_history(merchant_name, days)
 
