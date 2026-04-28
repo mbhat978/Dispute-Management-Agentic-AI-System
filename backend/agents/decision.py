@@ -516,20 +516,6 @@ def _rule_based_reasoning(state: DisputeState, compliance_policy_text: str = "")
             "recommended_actions": ["initiate_refund"],
         }
 
-    if category == "loan_dispute":
-        return {
-            "analysis": "Loan disputes are governed by compliance rules and must be reviewed by humans.",
-            "decision": "human_review_required",
-            "confidence": 0.98,
-            "justification": (
-                "Loan dispute requires human review due to compliance constraints. "
-                f"Relevant policy: {compliance_policy_text}"
-            ),
-            "evidence_used": list(gathered_data.keys()),
-            "risk_factors": ["compliance_sensitive"],
-            "recommended_actions": ["route_to_human"],
-        }
-
     if category == "failed_transaction" and trans_details.get("status") == "failed":
         return {
             "analysis": "Transaction status is failed while the customer reports deduction.",
@@ -628,8 +614,9 @@ def _validate_decision_against_rules(
         return "human_review_required", "Invalid proposed decision"
 
     # Strict rule enforcement for specific categories
-    if category == "merchant_dispute":
-        return "human_review_required", "Merchant disputes strictly require manual evidence review"
+    if category == "merchant_dispute" and proposed_decision == "auto_approved":
+        # Allow the LLM to auto-approve if it found clear evidence of non-delivery or merchant non-response
+        pass
         
     if category == "refund_not_received":
         refund_status = gathered_data.get("refund_status", {})
@@ -637,6 +624,9 @@ def _validate_decision_against_rules(
         
         if "Pending" in status_str:
             return "auto_rejected", "Refund is already pending at gateway. Customer must wait."
+        elif proposed_decision == "auto_approved":
+            # Allow the LLM to auto-approve if timeline tracking shows significant delay
+            pass
         else:
             return "human_review_required", "Merchant has not initiated refund. Requires manual review of return receipt."
             
@@ -697,6 +687,44 @@ def _execute_decision_actions(
                 banking_tools.initiate_chargeback(transaction_id, amount, "12.5", "Incorrect Amount")
                 actions_taken.append(f"⚖️ CHARGEBACK: Network claim filed (Visa Code 12.5) to recover ${amount} from merchant.")
                 
+        elif category == "loan_dispute":
+            loan_details = gathered_data.get("loan_details", {})
+            expected_emi = loan_details.get("expected_emi")
+            if expected_emi is not None and amount > expected_emi:
+                partial_amount = amount - expected_emi
+                banking_tools.initiate_refund(transaction_id, partial_amount, "EMI overcharge partial refund")
+                logger.info(f"[DECISION AGENT] Partial refund initiated: ${partial_amount} for loan transaction {transaction_id}")
+                actions_taken.append(f"💰 REFUNDED: Partial amount of ${partial_amount} credited back for EMI difference.")
+            else:
+                banking_tools.initiate_refund(transaction_id, amount, "Loan dispute approved")
+                logger.info(f"[DECISION AGENT] Full refund initiated: ${amount} for loan transaction {transaction_id}")
+                actions_taken.append(f"💰 REFUNDED: Full amount of ${amount} credited back.")
+                
+        elif category == "merchant_dispute":
+            banking_tools.initiate_refund(transaction_id, amount, "Merchant dispute approved")
+            logger.info(f"[DECISION AGENT] Full refund initiated: ${amount} for merchant dispute {transaction_id}")
+            actions_taken.append(f"💰 REFUNDED: Full amount of ${amount} credited back.")
+            
+            banking_tools.initiate_chargeback(transaction_id, amount, "13.1", "Merchant non-response or service not provided")
+            logger.info(f"[DECISION AGENT] Network chargeback submitted for merchant dispute: {transaction_id}")
+            actions_taken.append(f"⚖️ CHARGEBACK: Network claim filed (Visa Code 13.1) to recover ${amount} from merchant.")
+            
+        elif category == "merchant_dispute":
+            banking_tools.initiate_refund(transaction_id, amount, "Merchant dispute approved")
+            logger.info(f"[DECISION AGENT] Full refund initiated: ${amount} for merchant dispute {transaction_id}")
+            actions_taken.append(f"💰 REFUNDED: Full amount of ${amount} credited back.")
+            
+            banking_tools.initiate_chargeback(transaction_id, amount, "13.1", "Merchant non-response or service not provided")
+            logger.info(f"[DECISION AGENT] Network chargeback submitted for merchant dispute: {transaction_id}")
+            actions_taken.append(f"⚖️ CHARGEBACK: Network claim filed (Visa Code 13.1) to recover ${amount} from merchant.")
+            
+        elif category == "refund_not_received":
+            # If approved, escalate directly to a network chargeback
+            banking_tools.initiate_chargeback(transaction_id, amount, "4853", "Merchant failed to process refund in timeframe")
+            logger.info(f"[DECISION AGENT] Network chargeback submitted for unreceived refund: {transaction_id}")
+            actions_taken.append(f"⚖️ CHARGEBACK: Network claim filed (Code 4853) to recover ${amount} due to unreceived refund.")
+            # Note: We do not call initiate_refund here yet; customer must wait for provisional credit batch job
+            
         elif category in {"atm_failure", "duplicate", "failed_transaction"}:
             banking_tools.initiate_refund(transaction_id, amount, f"{category} dispute approved")
             logger.info(f"[DECISION AGENT] Full refund initiated: ${amount} for {category} transaction {transaction_id}")

@@ -289,6 +289,23 @@ AVAILABLE TOOLS:
     CRITICAL: If the customer claims an incorrect amount and the state contains receipt_image_base64, you MUST use this tool to extract the printed amount and compare it against the ledger amount before making a recommendation.
     Input: {{"receipt_base64": "<base64_string>", "expected_merchant": "<merchant_name>"}}
 
+12. get_delivery_tracking_status - Retrieves delivery status from carrier (e.g., FedEx, UPS)
+    Use when: 'merchant_dispute' (Item not delivered, lost in transit).
+    Input: {{"transaction_id": <id>}}
+    
+13. check_subscription_status - Checks if a customer has an active subscription with a merchant
+    Use when: Unrecognized charge from a known subscription service (e.g., Netflix, Spotify).
+    Input: {{"customer_id": <id>, "merchant_name": "<merchant>"}}
+    
+14. verify_subscription_cancellation - Checks if a customer previously cancelled a subscription
+    Use when: Customer claims they cancelled a subscription but were still charged.
+    Input: {{"customer_id": <id>, "merchant_name": "<merchant>", "cancellation_date": "YYYY-MM-DD"}}
+    Note: Extract cancellation_date from customer query if mentioned, otherwise system will use a default.
+    
+15. get_refund_timeline - Retrieves the expected timeline for a merchant refund
+    Use when: 'refund_not_received' (Customer expects a refund that hasn't posted yet).
+    Input: {{"transaction_id": <id>}}
+
 INVESTIGATION STRATEGY:
 - Start with transaction_details if not already available
 - **MANDATORY FOR FRAUD**: If category is 'fraud' or 'fraudulent_transaction', you MUST include both calculate_fraud_risk_score AND detect_dispute_fraud in your plan
@@ -468,6 +485,10 @@ def _sanitize_plan(
         "analyze_receipt_evidence": "receipt_analysis",
         "calculate_fraud_risk_score": "fraud_risk_score",
         "detect_dispute_fraud": "dispute_fraud_analysis",
+        "get_delivery_tracking_status": "delivery_status",
+        "check_subscription_status": "subscription_status",
+        "verify_subscription_cancellation": "cancellation_status",
+        "get_refund_timeline": "refund_timeline",
     }
 
     sanitized: List[Dict[str, Any]] = []
@@ -527,6 +548,24 @@ def _sanitize_plan(
                 "receipt_base64": receipt_image_base64 or tool_input.get("receipt_base64", ""),
                 "expected_merchant": tool_input.get("expected_merchant", "")
             }
+        elif tool_name == "get_delivery_tracking_status":
+            tool_input = {"transaction_id": transaction_id}
+        elif tool_name == "check_subscription_status":
+            tool_input = {"customer_id": customer_id, "merchant_name": tool_input.get("merchant_name", "")}
+        elif tool_name == "verify_subscription_cancellation":
+            # Use cancellation_date from LLM input, or default to 30 days ago
+            cancellation_date = tool_input.get("cancellation_date", "")
+            if not cancellation_date:
+                # Default to 30 days ago if not specified
+                from datetime import datetime, timedelta
+                cancellation_date = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
+            tool_input = {
+                "customer_id": customer_id,
+                "merchant_name": tool_input.get("merchant_name", ""),
+                "cancellation_date": cancellation_date
+            }
+        elif tool_name == "get_refund_timeline":
+            tool_input = {"transaction_id": transaction_id}
 
         if data_key == "transaction_details" and "transaction_details" in prior_gathered_data:
             continue
@@ -594,6 +633,18 @@ def _execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
         # Import the tool wrapper which handles dispute fraud detection
         from agents.tools_wrapper import detect_dispute_fraud_tool
         return detect_dispute_fraud_tool.invoke(tool_input)
+    if tool_name == "get_delivery_tracking_status":
+        return banking_tools.get_delivery_tracking_status(tool_input["transaction_id"])
+    if tool_name == "check_subscription_status":
+        return banking_tools.check_subscription_status(tool_input["customer_id"], tool_input.get("merchant_name", ""))
+    if tool_name == "verify_subscription_cancellation":
+        return banking_tools.verify_subscription_cancellation(
+            tool_input["customer_id"],
+            tool_input.get("merchant_name", ""),
+            tool_input.get("cancellation_date", "")
+        )
+    if tool_name == "get_refund_timeline":
+        return banking_tools.get_refund_timeline(tool_input["transaction_id"])
     return {"error": f"Unsupported tool: {tool_name}"}
 
 

@@ -179,8 +179,8 @@ SELECT * FROM audit_trail WHERE dispute_id = <dispute_id> ORDER BY timestamp;
 - ✅ Fraud risk score: >90 (CRITICAL)
 - ✅ Velocity check fails (>3 transactions/hour)
 - ✅ Geographic anomaly (impossible travel)
-- ✅ Auto-approve all 5 transactions
-- ✅ Block card immediately
+- ✅ Auto-approve the submitted fraudulent transaction
+- ✅ Card is immediately blocked, which automatically declines the other 4 pending charges on the network
 
 ---
 

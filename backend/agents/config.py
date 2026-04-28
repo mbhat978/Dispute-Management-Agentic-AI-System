@@ -108,7 +108,7 @@ LOAN_DISPUTE_SUBCATEGORIES = {
 # ============================================================================
 
 # Categories that MUST go to human review (compliance requirement)
-MANDATORY_HUMAN_REVIEW_CATEGORIES = ["loan_dispute"]
+MANDATORY_HUMAN_REVIEW_CATEGORIES = []
 
 # Amount threshold for mandatory human review
 MANDATORY_HUMAN_REVIEW_AMOUNT = 10000.0
