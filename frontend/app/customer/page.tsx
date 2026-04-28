@@ -565,6 +565,7 @@ export default function CustomerPortalPage() {
   const [chargedAmount, setChargedAmount] = useState("");
   const [subscriptionService, setSubscriptionService] = useState("");
   const [cancellationDate, setCancellationDate] = useState("");
+  const [refundEvidence, setRefundEvidence] = useState<File | null>(null);
 
   // State for past disputes
   const [pastDisputes, setPastDisputes] = useState<PastDispute[]>([]);
@@ -844,6 +845,9 @@ export default function CustomerPortalPage() {
       
       case "refund_not_received":
         query += "Issue: Refund not received for returned goods/cancelled service.\n";
+        if (refundEvidence) {
+          query += `Refund Evidence: ${refundEvidence.name} (attached)\n`;
+        }
         break;
       
       default:
@@ -876,15 +880,23 @@ export default function CustomerPortalPage() {
 
       // Convert receipt file to Base64 if present
       let receiptBase64 = null;
-      if (merchantReceipt) {
+      const fileToUpload = merchantReceipt || refundEvidence;
+      if (fileToUpload) {
         try {
-          receiptBase64 = await convertFileToBase64(merchantReceipt);
+          receiptBase64 = await convertFileToBase64(fileToUpload);
         } catch (e) {
-          console.error("Failed to convert receipt to Base64", e);
-          setError("Failed to process the uploaded receipt image.");
+          console.error("Failed to convert file to Base64", e);
+          setError("Failed to process the uploaded file.");
           setSubmitLoading(false);
           return;
         }
+      }
+
+      // Validate refund evidence is provided for refund disputes
+      if (disputeType === "refund_not_received" && !refundEvidence) {
+        setError("Please upload evidence of your refund request (email, receipt, or support chat screenshot).");
+        setSubmitLoading(false);
+        return;
       }
 
       const response = await fetch(`${API_BASE_URL}/api/disputes/process`, {
@@ -922,6 +934,7 @@ export default function CustomerPortalPage() {
       setMerchantReceipt(null);
       setExpectedAmount("");
       setChargedAmount("");
+      setRefundEvidence(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to submit dispute");
     } finally {
@@ -1323,6 +1336,7 @@ export default function CustomerPortalPage() {
                                   setChargedAmount("");
                                   setSubscriptionService("");
                                   setCancellationDate("");
+                                  setRefundEvidence(null);
                                 }}
                                 className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                                 disabled={!selectedTransactionId}
@@ -1494,6 +1508,58 @@ export default function CustomerPortalPage() {
                                       </div>
                                     )}
                                   </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {disputeType === "refund_not_received" && (
+                              <div className="space-y-4 rounded-lg border border-orange-200 bg-orange-50 p-4">
+                                <h4 className="text-sm font-semibold text-slate-900">Refund Evidence</h4>
+                                <p className="text-sm text-slate-600">
+                                  Please upload proof of return/refund request such as:
+                                </p>
+                                <ul className="ml-4 list-disc space-y-1 text-xs text-slate-600">
+                                  <li>Email confirmation from merchant about return/refund</li>
+                                  <li>Return receipt or tracking information</li>
+                                  <li>Support chat/ticket screenshot</li>
+                                  <li>Any communication showing refund was promised</li>
+                                </ul>
+                                
+                                <div className="space-y-2">
+                                  <Label htmlFor="refundEvidence">Upload Evidence (Required) *</Label>
+                                  <div className="flex items-center gap-2">
+                                    <label
+                                      htmlFor="refundEvidence"
+                                      className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-700 transition hover:bg-slate-50"
+                                    >
+                                      <Upload className="h-4 w-4" />
+                                      {refundEvidence ? "Change File" : "Upload Evidence"}
+                                    </label>
+                                    <input
+                                      id="refundEvidence"
+                                      type="file"
+                                      accept="image/*,.pdf"
+                                      onChange={(e) => setRefundEvidence(e.target.files?.[0] || null)}
+                                      className="hidden"
+                                    />
+                                    {refundEvidence && (
+                                      <div className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm">
+                                        <span className="text-slate-700">{refundEvidence.name}</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => setRefundEvidence(null)}
+                                          className="text-red-600 hover:text-red-700"
+                                        >
+                                          <X className="h-4 w-4" />
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                  {!refundEvidence && (
+                                    <p className="text-xs text-orange-600">
+                                      ⚠️ Evidence is required for refund disputes to help us investigate your case.
+                                    </p>
+                                  )}
                                 </div>
                               </div>
                             )}

@@ -15,6 +15,7 @@ import json
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
+from mcp.server.fastmcp import FastMCP
 
 # Add the backend directory to the Python path
 backend_dir = Path(__file__).parent.parent
@@ -26,6 +27,10 @@ load_dotenv(root_dir / '.env')
 
 from database import SessionLocal
 import models
+
+
+# Initialize FastMCP server
+mcp = FastMCP("BankingTools", port=8002)
 
 
 def get_transaction_details(transaction_id: int) -> Dict[str, Any]:
@@ -972,6 +977,83 @@ async def analyze_receipt_evidence(receipt_base64: str, expected_merchant: str) 
         })
 
 
+async def calculate_timeline_from_evidence(transaction_id: int, evidence_base64: str) -> str:
+    """
+    Analyzes a return receipt or cancellation email using Vision to extract the return date,
+    and calculates the refund timeline based on that actual physical date.
+    """
+    if not evidence_base64:
+        return json.dumps({"error": "No return receipt evidence provided."})
+        
+    try:
+        image_url = evidence_base64
+        if not image_url.startswith("data:image"):
+            image_url = f"data:image/jpeg;base64,{evidence_base64}"
+            
+        llm = ChatOpenAI(model="gpt-4o", temperature=0)
+        
+        prompt_text = """
+        You are a forensic financial AI. Analyze this return receipt, cancellation email, or support ticket screenshot.
+        Extract the exact DATE when the customer returned the item or cancelled the service.
+        
+        You MUST return ONLY a valid JSON object.
+        Use this exact JSON schema:
+        {
+            "extracted_return_date": "YYYY-MM-DD",
+            "is_valid_proof": boolean,
+            "note": "brief explanation of what you found"
+        }
+        """
+        
+        message = HumanMessage(
+            content=[
+                {"type": "text", "text": prompt_text},
+                {"type": "image_url", "image_url": {"url": image_url}}
+            ]
+        )
+        
+        response = await llm.ainvoke([message])
+        content_str = str(response.content) if not isinstance(response.content, str) else response.content
+        cleaned_content = content_str.replace("```json", "").replace("```", "").strip()
+        parsed_json = json.loads(cleaned_content)
+        
+        return_date_str = parsed_json.get("extracted_return_date")
+        is_valid = parsed_json.get("is_valid_proof", False)
+        
+        current_time = datetime.now()
+        days_elapsed = 0
+        
+        if return_date_str and is_valid:
+            try:
+                return_date = datetime.strptime(return_date_str, "%Y-%m-%d")
+                days_elapsed = (current_time - return_date).days
+            except ValueError:
+                pass
+                
+        if days_elapsed <= 3:
+            stage = "merchant_review"
+        elif days_elapsed <= 7:
+            stage = "merchant_escalation"
+        elif days_elapsed <= 14:
+            stage = "bank_investigation"
+        else:
+            stage = "provisional_credit"
+            
+        result = {
+            "transaction_id": transaction_id,
+            "return_date_extracted": return_date_str,
+            "is_valid_proof": is_valid,
+            "days_elapsed": days_elapsed,
+            "refund_stage": stage,
+            "vision_notes": parsed_json.get("note", "")
+        }
+        
+        return json.dumps(result)
+        
+    except Exception as e:
+        return json.dumps({"error": f"Vision analysis failed: {str(e)}"})
+
+
 # Helper function to get all available tools for agent introspection
 def get_available_tools() -> List[Dict[str, str]]:
     """
@@ -1042,6 +1124,39 @@ def get_available_tools() -> List[Dict[str, str]]:
         {
             "name": "analyze_receipt_evidence",
             "description": "Analyze a Base64 receipt image to extract charged amount and merchant name for 'incorrect_amount' disputes"
+        },
+        {
+            "name": "calculate_timeline_from_evidence",
+            "description": "Analyze a return receipt/email image using Vision to extract the return date and calculate the delayed refund timeline."
         }
     ]
     return tools
+
+
+# ============================================================================
+# FastMCP Tool Decorators
+# ============================================================================
+
+@mcp.tool()
+async def calculate_timeline_from_evidence_tool(transaction_id: int, evidence_base64: str) -> dict:
+    """
+    Analyze a return receipt/email image using Vision to extract the return date and calculate the delayed refund timeline.
+    
+    Args:
+        transaction_id: Transaction ID for the disputed refund
+        evidence_base64: Base64-encoded image of return receipt, cancellation email, or support chat
+    """
+    import json
+    from langchain_openai import ChatOpenAI
+    from langchain_core.messages import HumanMessage
+    
+    try:
+        result_str = await calculate_timeline_from_evidence(transaction_id, evidence_base64)
+        return json.loads(result_str)
+    except Exception as e:
+        return {"error": f"Tool execution failed: {str(e)}"}
+
+
+if __name__ == "__main__":
+    # Run as SSE server on port 8002
+    mcp.run(transport='sse')

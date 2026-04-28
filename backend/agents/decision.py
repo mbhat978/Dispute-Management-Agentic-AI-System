@@ -635,11 +635,29 @@ def _validate_decision_against_rules(
         refund_status = gathered_data.get("refund_status", {})
         status_str = refund_status.get("refund_status", "") if isinstance(refund_status, dict) else ""
         
+        # Check both standard timeline and new Vision-extracted timeline
+        vision_timeline = gathered_data.get("calculate_timeline_from_evidence", {})
+        if isinstance(vision_timeline, str):
+            try:
+                vision_timeline = json.loads(vision_timeline)
+            except:
+                vision_timeline = {}
+                
+        std_timeline = gathered_data.get("refund_timeline", {})
+        
+        # Prioritize the physically verified days_elapsed from Vision
+        days_elapsed = vision_timeline.get("days_elapsed") or std_timeline.get("days_elapsed", 0)
+        is_valid_proof = vision_timeline.get("is_valid_proof", False)
+        
         if "Pending" in status_str:
-            return "auto_rejected", "Refund is already pending at gateway. Customer must wait."
+            if days_elapsed > 7:
+                return "auto_approved", f"Merchant refund pending >7 days (Calculated from evidence: {days_elapsed} days). Escalating to chargeback."
+            else:
+                return "auto_rejected", "Refund is currently pending at gateway within normal timeframes. Customer must wait."
         elif proposed_decision == "auto_approved":
-            # Allow the LLM to auto-approve if timeline tracking shows significant delay
             pass
+        elif is_valid_proof and days_elapsed > 14:
+            return "auto_approved", f"Valid return proof provided. Merchant non-responsive for {days_elapsed} days. Escalating to chargeback."
         else:
             return "human_review_required", "Merchant has not initiated refund. Requires manual review of return receipt."
             

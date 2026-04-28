@@ -347,6 +347,25 @@ def analyze_receipt_evidence(receipt_base64: str, expected_merchant: str) -> str
     return json.dumps(result)
 
 
+def calculate_timeline_from_evidence(evidence_base64: str, transaction_id: int) -> Dict[str, Any]:
+    """
+    Calculates refund timeline from uploaded receipt/email evidence using Vision AI.
+    Extracts the return date from the evidence and calculates expected refund timeline.
+    
+    Args:
+        evidence_base64 (str): Base64-encoded receipt or email image data.
+        transaction_id (int): The transaction ID for context.
+        
+    Returns:
+        Dict[str, Any]: Timeline analysis including extracted return date, days elapsed, and expected refund date.
+    """
+    result = call_mcp_tool('calculate_timeline_from_evidence_tool', {
+        'evidence_base64': evidence_base64,
+        'transaction_id': transaction_id,
+    })
+    return result
+
+
 # ============================================================================
 # Enhanced Banking Tool Wrapper Functions (New MCP Server on Port 8003)
 # ============================================================================

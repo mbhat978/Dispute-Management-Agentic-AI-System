@@ -374,6 +374,10 @@ AVAILABLE TOOLS:
     Use when: 'merchant_dispute' to see if there is a pattern of similar complaints against them.
     Input: {{"merchant_name": "<merchant>"}}
 
+18. calculate_timeline_from_evidence - Calculates refund timeline from uploaded receipt/email evidence
+    Use when: 'refund_not_received' AND customer uploaded evidence (receipt_image_base64 exists in state).
+    Input: {{"evidence_base64": "<base64_string>", "transaction_id": <id>}}
+
 INVESTIGATION STRATEGY:
 - Start with transaction_details if not already available
 - **MANDATORY FOR FRAUD**: If category is 'fraud' or 'fraudulent_transaction', you MUST include both calculate_fraud_risk_score AND detect_dispute_fraud in your plan
@@ -382,6 +386,12 @@ INVESTIGATION STRATEGY:
 - Avoid redundant tool calls (check prior_data_keys)
 - Plan 2-5 tools maximum for efficiency
 - IMPORTANT: If receipt_image_base64 is present in the state and the dispute is about incorrect_amount, you MUST include analyze_receipt_evidence in your plan
+
+PLANNING RULES:
+    - IF CATEGORY IS 'refund_not_received':
+      MANDATORY: Use `get_transaction_details` and `check_merchant_refund_status`.
+      IF the customer uploaded evidence (receipt/email): Use `calculate_timeline_from_evidence`.
+      ELSE: Use `get_refund_timeline`.
 
 Return ONLY valid JSON:
 {{
@@ -551,6 +561,7 @@ def _sanitize_plan(
         "get_refund_timeline": "refund_timeline",
         "check_merchant_reputation_score": "merchant_reputation",
         "get_merchant_dispute_history": "merchant_dispute_history",
+        "calculate_timeline_from_evidence": "timeline_from_evidence",
     }
 
     sanitized: List[Dict[str, Any]] = []
@@ -585,6 +596,12 @@ def _sanitize_plan(
             tool_input = {
                 "receipt_base64": receipt_image_base64 or tool_input.get("receipt_base64", ""),
                 "expected_merchant": tool_input.get("expected_merchant", "")
+            }
+        elif tool_name == "calculate_timeline_from_evidence":
+            evidence_data = receipt_image_base64 or tool_input.get("evidence_base64", "")
+            tool_input = {
+                "evidence_base64": evidence_data,
+                "transaction_id": transaction_id
             }
         elif tool_name == "get_delivery_tracking_status":
             tool_input = {"transaction_id": transaction_id}
@@ -627,6 +644,82 @@ def _sanitize_plan(
 
 
 def _execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
+    # Intercept Vision tool to avoid massive Base64 payloads over SSE crashing the TaskGroup
+    if tool_name == "calculate_timeline_from_evidence":
+        try:
+            import json
+            from langchain_openai import ChatOpenAI
+            from langchain_core.messages import HumanMessage
+            from datetime import datetime
+            
+            evidence_base64 = tool_input.get("evidence_base64", "")
+            if not evidence_base64:
+                return {"error": "No return receipt evidence provided."}
+                
+            image_url = evidence_base64
+            if not image_url.startswith("data:image"):
+                image_url = f"data:image/jpeg;base64,{evidence_base64}"
+                
+            llm = ChatOpenAI(model="gpt-4o", temperature=0)
+            prompt_text = """
+            You are a forensic financial AI. Analyze this return receipt, cancellation email, or support ticket screenshot.
+            Extract the exact DATE when the customer returned the item or cancelled the service.
+            
+            You MUST return ONLY a valid JSON object.
+            Use this exact JSON schema:
+            {
+                "extracted_return_date": "YYYY-MM-DD",
+                "is_valid_proof": boolean,
+                "note": "brief explanation of what you found"
+            }
+            """
+            message = HumanMessage(
+                content=[
+                    {"type": "text", "text": prompt_text},
+                    {"type": "image_url", "image_url": {"url": image_url}}
+                ]
+            )
+            
+            # Run synchronously since we are inside the normal execution flow
+            response = llm.invoke([message])
+            content_str = str(response.content) if not isinstance(response.content, str) else response.content
+            cleaned_content = content_str.replace("```json", "").replace("```", "").strip()
+            parsed_json = json.loads(cleaned_content)
+            
+            return_date_str = parsed_json.get("extracted_return_date")
+            is_valid = parsed_json.get("is_valid_proof", False)
+            
+            current_time = datetime.now()
+            days_elapsed = 0
+            
+            if return_date_str and is_valid:
+                try:
+                    return_date = datetime.strptime(return_date_str, "%Y-%m-%d")
+                    days_elapsed = (current_time - return_date).days
+                except ValueError:
+                    pass
+                    
+            if days_elapsed <= 3:
+                stage = "merchant_review"
+            elif days_elapsed <= 7:
+                stage = "merchant_escalation"
+            elif days_elapsed <= 14:
+                stage = "bank_investigation"
+            else:
+                stage = "provisional_credit"
+                
+            return {
+                "transaction_id": tool_input.get("transaction_id"),
+                "return_date_extracted": return_date_str,
+                "is_valid_proof": is_valid,
+                "days_elapsed": days_elapsed,
+                "refund_stage": stage,
+                "vision_notes": parsed_json.get("note", "")
+            }
+        except Exception as e:
+            return {"error": f"Vision analysis failed: {str(e)}"}
+            
+    # Existing execution logic continues below...
     if tool_name == "get_transaction_details":
         return banking_tools.get_transaction_details(tool_input["transaction_id"])
     if tool_name == "get_customer_history":
@@ -682,6 +775,11 @@ def _execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
         return banking_tools.check_merchant_reputation_score(tool_input.get("merchant_name", ""))
     if tool_name == "get_merchant_dispute_history":
         return banking_tools.get_merchant_dispute_history(tool_input.get("merchant_name", ""))
+    if tool_name == "calculate_timeline_from_evidence":
+        return banking_tools.calculate_timeline_from_evidence(
+            evidence_base64=tool_input.get("evidence_base64", ""),
+            transaction_id=tool_input["transaction_id"]
+        )
     return {"error": f"Unsupported tool: {tool_name}"}
 
 
