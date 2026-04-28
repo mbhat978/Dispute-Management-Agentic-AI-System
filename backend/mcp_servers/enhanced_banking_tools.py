@@ -122,7 +122,7 @@ def _get_delivery_recommendation(status: str) -> str:
     return recommendations.get(status, "Unknown status. Route to human review.")
 
 
-def get_merchant_dispute_history(merchant_name: str, days: int = 180) -> Dict[str, Any]:
+def get_merchant_dispute_history(merchant_name: str, days: int = 90) -> Dict[str, Any]:
     """
     Get historical dispute data for a specific merchant
     
@@ -221,7 +221,7 @@ def check_merchant_reputation_score(merchant_name: str) -> Dict[str, Any]:
     db = SessionLocal()
     try:
         # Get merchant dispute history
-        history = get_merchant_dispute_history(merchant_name, days=180)
+        history = get_merchant_dispute_history(merchant_name, days=90)
         
         # Calculate reputation score (0-100, higher is better)
         base_score = 100
@@ -263,7 +263,7 @@ def check_merchant_reputation_score(merchant_name: str) -> Dict[str, Any]:
             "merchant_name": merchant_name,
             "reputation_score": reputation_score,
             "trust_level": trust_level,
-            "total_disputes_180d": total_disputes,
+            "total_disputes_90d": total_disputes,
             "approval_rate": approval_rate,
             "risk_level": history.get("risk_level", "UNKNOWN"),
             "recommendation": _get_reputation_recommendation(reputation_score, trust_level)
@@ -551,14 +551,14 @@ def get_delivery_tracking_status_tool(transaction_id: int, tracking_number: Opti
 
 
 @mcp.tool()
-def get_merchant_dispute_history_tool(merchant_name: str, days: int = 180) -> dict:
+def get_merchant_dispute_history_tool(merchant_name: str, days: int = 90) -> dict:
     """
     Get historical dispute data for a specific merchant to identify patterns.
     Use this to assess merchant reliability and dispute trends.
     
     Args:
         merchant_name: Name of the merchant
-        days: Number of days to look back (default 180)
+        days: Number of days to look back (default 90)
     """
     return get_merchant_dispute_history(merchant_name, days)
 

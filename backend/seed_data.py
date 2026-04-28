@@ -578,7 +578,7 @@ def create_test_scenario_transactions(db: Session, customers):
             customer_id=shopxyz_customers[i % 5].id,
             amount=100.00 + (i * 10),
             merchant_name="ShopXYZ Online",
-            transaction_date=base_time - timedelta(days=150 - (i * 5)),  # Spread over 150 days
+            transaction_date=base_time - timedelta(days=55 - (i * 3)),  # Spread within 90-day window
             status="success",
             is_international=False,
             refunded_amount=0.0,
@@ -614,8 +614,8 @@ def create_test_scenario_transactions(db: Session, customers):
             status=ticket_status,
             final_decision=ticket_decision,
             resolution_notes=f"Historical dispute - {'Approved' if ticket_decision == 'approve' else 'Denied'}",
-            created_at=base_time - timedelta(days=140 - (i * 5)),
-            updated_at=base_time - timedelta(days=135 - (i * 5))
+            created_at=base_time - timedelta(days=55 - (i * 3)),
+            updated_at=base_time - timedelta(days=50 - (i * 3))
         )
         db.add(dispute_ticket)
         db.commit()
