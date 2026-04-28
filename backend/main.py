@@ -1490,12 +1490,11 @@ async def get_analytics(db: Session = Depends(get_db)):
         ).count()
         logger.info("Auto-Resolved Count: %s", auto_resolved_count)
         
-        # 3. Human review count (human_review_required + resolved_approved + resolved_rejected)
+        # 3. Human review count (currently awaiting agent action)
         human_review_count = db.query(models.DisputeTicket).filter(
             models.DisputeTicket.status.in_([
                 'human_review_required',
-                'resolved_approved',
-                'resolved_rejected'
+                'pending_review'
             ])
         ).count()
         logger.info("Human Review Count: %s", human_review_count)

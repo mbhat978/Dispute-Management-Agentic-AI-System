@@ -61,6 +61,7 @@ function getStatusBadge(status: string) {
     case "resolved_rejected":
       return { variant: "outline" as const, className: "bg-red-50 text-red-700 border-red-200 font-semibold" };
     case "human_review_required":
+    case "pending_review":
       return { variant: "outline" as const, className: "bg-amber-50 text-amber-700 border-amber-200 font-semibold animate-pulse" };
     default:
       return { variant: "outline" as const, className: "bg-slate-50 text-slate-700 border-slate-200 font-semibold" };
@@ -92,8 +93,8 @@ export default function DashboardPage() {
       
       if (!matchesSearch) return false;
       
-      if (activeTab === "review") return d.status === "human_review_required" || d.status === "pending";
-      if (activeTab === "resolved") return d.status !== "human_review_required" && d.status !== "pending";
+      if (activeTab === "review") return d.status === "human_review_required" || d.status === "pending_review" || d.status === "pending";
+      if (activeTab === "resolved") return d.status !== "human_review_required" && d.status !== "pending_review" && d.status !== "pending" && d.status !== "under_investigation";
       return true;
     });
   }, [disputes, searchTerm, activeTab]);
@@ -255,9 +256,9 @@ export default function DashboardPage() {
                   className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex-1 sm:flex-none flex items-center justify-center gap-2 ${activeTab === "review" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
                 >
                   Action Required
-                  {disputes.filter(d => d.status === "human_review_required").length > 0 && (
+                  {disputes.filter(d => d.status === "human_review_required" || d.status === "pending_review").length > 0 && (
                     <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">
-                      {disputes.filter(d => d.status === "human_review_required").length}
+                      {disputes.filter(d => d.status === "human_review_required" || d.status === "pending_review").length}
                     </span>
                   )}
                 </button>

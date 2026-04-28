@@ -564,6 +564,67 @@ def create_test_scenario_transactions(db: Session, customers):
     print(f"    ✓ ID {trans_chargeback.id}: ${trans_chargeback.amount:,.2f} to {trans_chargeback.merchant_name} (Merchant not responding for 15 days)")
     
     # ========================================================================
+    # HIGH-RISK MERCHANT SETUP: Create dispute history for ShopXYZ Online
+    # ========================================================================
+    print("\n  📍 Creating High-Risk Merchant History: ShopXYZ Online")
+    
+    # Create 20 past transactions with ShopXYZ Online (high-risk merchant)
+    # These will be used to establish a pattern of disputes
+    shopxyz_customers = [customers[0], customers[1], customers[2], customers[3], customers[4]]
+    shopxyz_transaction_ids = []
+    
+    for i in range(20):
+        trans_shopxyz_hist = models.Transaction(
+            customer_id=shopxyz_customers[i % 5].id,
+            amount=100.00 + (i * 10),
+            merchant_name="ShopXYZ Online",
+            transaction_date=base_time - timedelta(days=150 - (i * 5)),  # Spread over 150 days
+            status="success",
+            is_international=False,
+            refunded_amount=0.0,
+            transaction_type="debit"
+        )
+        db.add(trans_shopxyz_hist)
+        db.commit()
+        db.refresh(trans_shopxyz_hist)
+        shopxyz_transaction_ids.append(trans_shopxyz_hist.id)
+        transactions.append(trans_shopxyz_hist)
+    
+    # Create 15 dispute tickets for ShopXYZ Online (75% approval rate = high-risk)
+    # 13 approved, 2 denied = 65% approval rate
+    approved_count = 0
+    denied_count = 0
+    
+    for i in range(15):
+        # Determine status: first 13 are approved, last 2 are denied
+        if i < 13:
+            ticket_status = "resolved"
+            ticket_decision = "approve"
+            approved_count += 1
+        else:
+            ticket_status = "resolved"
+            ticket_decision = "deny"
+            denied_count += 1
+        
+        dispute_ticket = models.DisputeTicket(
+            transaction_id=shopxyz_transaction_ids[i],
+            customer_id=shopxyz_customers[i % 5].id,
+            dispute_category="merchant_dispute",
+            dispute_reason=f"ShopXYZ dispute #{i+1}: Item not received or empty box",
+            status=ticket_status,
+            final_decision=ticket_decision,
+            resolution_notes=f"Historical dispute - {'Approved' if ticket_decision == 'approve' else 'Denied'}",
+            created_at=base_time - timedelta(days=140 - (i * 5)),
+            updated_at=base_time - timedelta(days=135 - (i * 5))
+        )
+        db.add(dispute_ticket)
+        db.commit()
+    
+    print(f"    ✓ Created 20 historical transactions for ShopXYZ Online")
+    print(f"    ✓ Created 15 dispute tickets: {approved_count} approved, {denied_count} denied")
+    print(f"    ✓ Approval rate: {(approved_count/15)*100:.1f}% (HIGH-RISK MERCHANT)")
+    
+    # ========================================================================
     # ADDITIONAL: Normal transactions for context
     # ========================================================================
     print("\n  📍 Additional: Normal transactions for customer history")

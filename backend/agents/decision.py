@@ -614,9 +614,19 @@ def _validate_decision_against_rules(
         return "human_review_required", "Invalid proposed decision"
 
     # Strict rule enforcement for specific categories
-    if category == "merchant_dispute" and proposed_decision == "auto_approved":
-        # Allow the LLM to auto-approve if it found clear evidence of non-delivery or merchant non-response
-        pass
+    if category == "merchant_dispute":
+        delivery_data = gathered_data.get("delivery_status", {})
+        tracking_status = delivery_data.get("status", "")
+        
+        # Rule: Conflicting Evidence Detection
+        # If the customer filed a non-delivery dispute, but the carrier API claims it was delivered,
+        # we cannot blindly auto-approve OR auto-reject. We must route to a human for porch-piracy/signature investigation.
+        if tracking_status == "delivered":
+            return "human_review_required", "Conflicting evidence: Carrier tracking indicates 'delivered', requiring human review to investigate potential misdelivery or stolen goods."
+            
+        if proposed_decision == "auto_approved":
+            # Allow the LLM to auto-approve ONLY if there is clear evidence of non-delivery (e.g., lost_in_transit) or merchant non-response
+            pass
         
     if category == "refund_not_received":
         refund_status = gathered_data.get("refund_status", {})

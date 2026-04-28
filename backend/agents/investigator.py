@@ -92,8 +92,17 @@ def investigator_node(state: DisputeState) -> Dict[str, Any]:
         tool_names = [step["tool"] for step in plan]
         logger.info(f"[INVESTIGATOR AGENT] Executing tools in parallel: {tool_names}")
         
-        # Execute all tools in parallel using ThreadPoolExecutor
+        # CRITICAL FIX: Execute get_transaction_details first if present, then execute rest
+        # This ensures merchant_name is available for merchant-related tools
         executed_steps: List[str] = []
+        transaction_details_step = None
+        remaining_steps = []
+        
+        for step in plan:
+            if step["tool"] == "get_transaction_details":
+                transaction_details_step = step
+            else:
+                remaining_steps.append(step)
         
         def execute_step(step: Dict[str, Any]) -> Tuple[str, str, Dict[str, Any], Dict[str, Any]]:
             """Execute a single tool step and return results."""
@@ -118,32 +127,86 @@ def investigator_node(state: DisputeState) -> Dict[str, Any]:
             
             return tool_name, data_key, tool_input, observation
         
-        # Execute all steps in parallel
-        with ThreadPoolExecutor(max_workers=len(plan)) as executor:
-            # Submit all tasks
-            future_to_step = {executor.submit(execute_step, step): step for step in plan}
-            
-            # Collect results as they complete
-            for future in as_completed(future_to_step):
-                try:
-                    tool_name, data_key, tool_input, observation = future.result()
-                    
-                    # Store results
-                    gathered_data[data_key] = observation
-                    executed_steps.append(tool_name)
-                    
-                    # Add to audit trail
-                    audit_trail.append(
-                        f"Investigator Agent ACTION: Calling {tool_name} with input {json.dumps(tool_input, default=str)}"
-                    )
-                    audit_trail.append(
-                        f"Investigator Agent OBSERVATION: {tool_name} returned {json.dumps(observation, default=str)}"
-                    )
-                except Exception as e:
-                    step = future_to_step[future]
-                    tool_name = step["tool"]
-                    logger.error(f"[INVESTIGATOR AGENT] Tool execution failed: {tool_name} - {str(e)}")
-                    audit_trail.append(f"Investigator Agent ERROR: {tool_name} failed - {str(e)}")
+        # Execute transaction_details first if present
+        if transaction_details_step:
+            try:
+                tool_name, data_key, tool_input, observation = execute_step(transaction_details_step)
+                gathered_data[data_key] = observation
+                executed_steps.append(tool_name)
+                audit_trail.append(
+                    f"Investigator Agent ACTION: Calling {tool_name} with input {json.dumps(tool_input, default=str)}"
+                )
+                audit_trail.append(
+                    f"Investigator Agent OBSERVATION: {tool_name} returned {json.dumps(observation, default=str)}"
+                )
+                
+                # Extract merchant_name for subsequent tools
+                merchant_name = observation.get("merchant_name", "")
+                logger.info(f"[INVESTIGATOR AGENT] Extracted merchant_name from transaction_details: '{merchant_name}'")
+                
+                # Update remaining steps with merchant_name if needed
+                # Define placeholder patterns that should be treated as empty
+                placeholder_patterns = [
+                    "<merchant_name>",
+                    "<merchant_name_from_transaction_details>",
+                    "extracted_from_transaction_details",
+                    "<merchant>",
+                    "merchant_name",
+                    ""
+                ]
+                
+                for step in remaining_steps:
+                    if step["tool"] in ["check_merchant_reputation_score", "get_merchant_dispute_history"]:
+                        current_merchant = step["input"].get("merchant_name", "")
+                        logger.info(f"[INVESTIGATOR AGENT] Tool {step['tool']} current merchant_name: '{current_merchant}'")
+                        # Check if current merchant_name is empty or a placeholder
+                        if not current_merchant or current_merchant in placeholder_patterns:
+                            step["input"]["merchant_name"] = merchant_name
+                            logger.info(f"[INVESTIGATOR AGENT] Updated {step['tool']} with merchant_name: '{merchant_name}'")
+                        else:
+                            logger.info(f"[INVESTIGATOR AGENT] Tool {step['tool']} already has valid merchant_name, not updating")
+                    elif step["tool"] in ["check_subscription_status", "verify_subscription_cancellation"]:
+                        current_merchant = step["input"].get("merchant_name", "")
+                        if not current_merchant or current_merchant in placeholder_patterns:
+                            step["input"]["merchant_name"] = merchant_name
+                            logger.info(f"[INVESTIGATOR AGENT] Updated {step['tool']} with merchant_name: '{merchant_name}'")
+                    elif step["tool"] == "analyze_receipt_evidence":
+                        current_merchant = step["input"].get("expected_merchant", "")
+                        if not current_merchant or current_merchant in placeholder_patterns:
+                            step["input"]["expected_merchant"] = merchant_name
+                            logger.info(f"[INVESTIGATOR AGENT] Updated {step['tool']} with expected_merchant: '{merchant_name}'")
+                            
+            except Exception as e:
+                logger.error(f"[INVESTIGATOR AGENT] Tool execution failed: get_transaction_details - {str(e)}")
+                audit_trail.append(f"Investigator Agent ERROR: get_transaction_details failed - {str(e)}")
+        
+        # Execute remaining steps in parallel
+        if remaining_steps:
+            with ThreadPoolExecutor(max_workers=len(remaining_steps)) as executor:
+                # Submit all tasks
+                future_to_step = {executor.submit(execute_step, step): step for step in remaining_steps}
+                
+                # Collect results as they complete
+                for future in as_completed(future_to_step):
+                    try:
+                        tool_name, data_key, tool_input, observation = future.result()
+                        
+                        # Store results
+                        gathered_data[data_key] = observation
+                        executed_steps.append(tool_name)
+                        
+                        # Add to audit trail
+                        audit_trail.append(
+                            f"Investigator Agent ACTION: Calling {tool_name} with input {json.dumps(tool_input, default=str)}"
+                        )
+                        audit_trail.append(
+                            f"Investigator Agent OBSERVATION: {tool_name} returned {json.dumps(observation, default=str)}"
+                        )
+                    except Exception as e:
+                        step = future_to_step[future]
+                        tool_name = step["tool"]
+                        logger.error(f"[INVESTIGATOR AGENT] Tool execution failed: {tool_name} - {str(e)}")
+                        audit_trail.append(f"Investigator Agent ERROR: {tool_name} failed - {str(e)}")
 
         investigation_confidence, evidence_quality_score, summary = _assess_evidence(
             category=category,
@@ -302,6 +365,14 @@ AVAILABLE TOOLS:
 15. get_refund_timeline - Retrieves the expected timeline for a merchant refund
     Use when: 'refund_not_received' (Customer expects a refund that hasn't posted yet).
     Input: {{"transaction_id": <id>}}
+    
+16. check_merchant_reputation_score - Retrieves a trust score (0-100) for a merchant
+    Use when: 'merchant_dispute' to verify if the merchant is generally trustworthy or suspicious.
+    Input: {{"merchant_name": "<merchant>"}}
+    
+17. get_merchant_dispute_history - Checks how many recent disputes a merchant has had
+    Use when: 'merchant_dispute' to see if there is a pattern of similar complaints against them.
+    Input: {{"merchant_name": "<merchant>"}}
 
 INVESTIGATION STRATEGY:
 - Start with transaction_details if not already available
@@ -478,6 +549,8 @@ def _sanitize_plan(
         "check_subscription_status": "subscription_status",
         "verify_subscription_cancellation": "cancellation_status",
         "get_refund_timeline": "refund_timeline",
+        "check_merchant_reputation_score": "merchant_reputation",
+        "get_merchant_dispute_history": "merchant_dispute_history",
     }
 
     sanitized: List[Dict[str, Any]] = []
@@ -508,7 +581,7 @@ def _sanitize_plan(
         elif tool_name == "detect_dispute_fraud":
             tool_input = {"customer_id": customer_id}
         elif tool_name == "analyze_receipt_evidence":
-            # Use the receipt_image_base64 from state if available
+            # Merchant name will be injected during sequential execution
             tool_input = {
                 "receipt_base64": receipt_image_base64 or tool_input.get("receipt_base64", ""),
                 "expected_merchant": tool_input.get("expected_merchant", "")
@@ -516,6 +589,7 @@ def _sanitize_plan(
         elif tool_name == "get_delivery_tracking_status":
             tool_input = {"transaction_id": transaction_id}
         elif tool_name == "check_subscription_status":
+            # Merchant name will be injected during sequential execution
             tool_input = {"customer_id": customer_id, "merchant_name": tool_input.get("merchant_name", "")}
         elif tool_name == "verify_subscription_cancellation":
             # Use cancellation_date from LLM input, or default to 30 days ago
@@ -524,6 +598,7 @@ def _sanitize_plan(
                 # Default to 30 days ago if not specified
                 from datetime import datetime, timedelta
                 cancellation_date = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
+            # Merchant name will be injected during sequential execution
             tool_input = {
                 "customer_id": customer_id,
                 "merchant_name": tool_input.get("merchant_name", ""),
@@ -531,6 +606,12 @@ def _sanitize_plan(
             }
         elif tool_name == "get_refund_timeline":
             tool_input = {"transaction_id": transaction_id}
+        elif tool_name == "check_merchant_reputation_score":
+            # Merchant name will be injected during sequential execution
+            tool_input = {"merchant_name": tool_input.get("merchant_name", "")}
+        elif tool_name == "get_merchant_dispute_history":
+            # Merchant name will be injected during sequential execution
+            tool_input = {"merchant_name": tool_input.get("merchant_name", "")}
 
         if data_key == "transaction_details" and "transaction_details" in prior_gathered_data:
             continue
@@ -603,6 +684,10 @@ def _execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
         )
     if tool_name == "get_refund_timeline":
         return banking_tools.get_refund_timeline(tool_input["transaction_id"])
+    if tool_name == "check_merchant_reputation_score":
+        return banking_tools.check_merchant_reputation_score(tool_input.get("merchant_name", ""))
+    if tool_name == "get_merchant_dispute_history":
+        return banking_tools.get_merchant_dispute_history(tool_input.get("merchant_name", ""))
     return {"error": f"Unsupported tool: {tool_name}"}
 
 
