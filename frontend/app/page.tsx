@@ -136,7 +136,7 @@ export default function HomePage() {
             <div className="text-center mt-4">
               <p className="text-xs text-slate-400">
                 {loginType === "retail"
-                  ? <>Demo Access: Use ID <strong>1 through 13</strong> with any password.</>
+                  ? <>Demo Access: Use ID <strong>1 through 6</strong> with any password.</>
                   : <>Demo Access: Use ID <strong>admin</strong> with any password.</>
                 }
               </p>

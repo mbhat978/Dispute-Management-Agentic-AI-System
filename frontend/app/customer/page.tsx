@@ -563,6 +563,8 @@ export default function CustomerPortalPage() {
   const [merchantReceipt, setMerchantReceipt] = useState<File | null>(null);
   const [expectedAmount, setExpectedAmount] = useState("");
   const [chargedAmount, setChargedAmount] = useState("");
+  const [subscriptionService, setSubscriptionService] = useState("");
+  const [cancellationDate, setCancellationDate] = useState("");
 
   // State for past disputes
   const [pastDisputes, setPastDisputes] = useState<PastDispute[]>([]);
@@ -641,6 +643,14 @@ export default function CustomerPortalPage() {
           "Transaction timeout but account charged",
           "Failed online payment but amount debited",
           "Transaction error but money taken"
+        ];
+      case "subscription_cancellation":
+        return [
+          "Cancelled subscription but still charged",
+          "Subscription charge after cancellation",
+          "Recurring charge despite cancellation",
+          "Charged for cancelled Netflix/Spotify subscription",
+          "Subscription not stopped after cancellation request"
         ];
       case "refund_not_received":
         return [
@@ -813,10 +823,20 @@ export default function CustomerPortalPage() {
           query += `Merchant Receipt: ${merchantReceipt.name} (attached)\n`;
         }
         break;
+      case "subscription_cancellation":
+        query += "Issue: Subscription cancelled but still charged.\n";
+        if (subscriptionService.trim()) {
+          query += `Subscription Service: ${subscriptionService.trim()}\n`;
+        }
+        if (cancellationDate.trim()) {
+          query += `Cancellation Date: ${cancellationDate.trim()}\n`;
+        }
+        break;
       
       case "duplicate":
         query += "Issue: Duplicate charge detected.\n";
         break;
+      
       
       case "failed_transaction":
         query += "Issue: Transaction failed but amount was debited.\n";
@@ -1301,6 +1321,8 @@ export default function CustomerPortalPage() {
                                   setMerchantReceipt(null);
                                   setExpectedAmount("");
                                   setChargedAmount("");
+                                  setSubscriptionService("");
+                                  setCancellationDate("");
                                 }}
                                 className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                                 disabled={!selectedTransactionId}
@@ -1312,6 +1334,7 @@ export default function CustomerPortalPage() {
                                 <option value="incorrect_amount">💰 Incorrect Amount Charged</option>
                                 <option value="merchant_dispute">🏪 Merchant Dispute</option>
                                 <option value="duplicate">📋 Duplicate Charge</option>
+                                <option value="subscription_cancellation">🔄 Subscription Cancelled But Charged</option>
                                 <option value="failed_transaction">❌ Failed Transaction</option>
                                 <option value="refund_not_received">↩️ Refund Not Received</option>
                               </select>
@@ -1372,6 +1395,36 @@ export default function CustomerPortalPage() {
                                     placeholder="e.g., 200.00"
                                     className="bg-white text-base"
                                   />
+                                </div>
+                              </div>
+                            )}
+
+                            {disputeType === "subscription_cancellation" && (
+                              <div className="space-y-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
+                                <h4 className="text-sm font-semibold text-slate-900">Subscription Details</h4>
+                                
+                                <div className="space-y-2">
+                                  <Label htmlFor="subscriptionService">Subscription Service/Merchant</Label>
+                                  <Input
+                                    id="subscriptionService"
+                                    type="text"
+                                    value={subscriptionService}
+                                    onChange={(e) => setSubscriptionService(e.target.value)}
+                                    placeholder="e.g., Netflix, Spotify, Amazon Prime"
+                                    className="bg-white text-base"
+                                  />
+                                </div>
+                                
+                                <div className="space-y-2">
+                                  <Label htmlFor="cancellationDate">Cancellation Date</Label>
+                                  <Input
+                                    id="cancellationDate"
+                                    type="date"
+                                    value={cancellationDate}
+                                    onChange={(e) => setCancellationDate(e.target.value)}
+                                    className="bg-white text-base"
+                                  />
+                                  <p className="text-xs text-slate-500">When did you cancel the subscription?</p>
                                 </div>
                               </div>
                             )}
