@@ -649,17 +649,24 @@ def _validate_decision_against_rules(
         days_elapsed = vision_timeline.get("days_elapsed") or std_timeline.get("days_elapsed", 0)
         is_valid_proof = vision_timeline.get("is_valid_proof", False)
         
+        # Rule 1: Check if refund is pending at gateway
         if "Pending" in status_str:
             if days_elapsed > 7:
                 return "auto_approved", f"Merchant refund pending >7 days (Calculated from evidence: {days_elapsed} days). Escalating to chargeback."
             else:
                 return "auto_rejected", "Refund is currently pending at gateway within normal timeframes. Customer must wait."
-        elif proposed_decision == "auto_approved":
-            pass
-        elif is_valid_proof and days_elapsed > 14:
+        
+        # Rule 2: Check if customer has valid proof and merchant is non-responsive
+        # This rule takes precedence over LLM decision when evidence is strong
+        if is_valid_proof and days_elapsed > 14:
             return "auto_approved", f"Valid return proof provided. Merchant non-responsive for {days_elapsed} days. Escalating to chargeback."
-        else:
+        
+        # Rule 3: If no refund initiated and no strong evidence, require human review
+        if "No Refund Initiated" in status_str:
             return "human_review_required", "Merchant has not initiated refund. Requires manual review of return receipt."
+        
+        # Rule 4: Allow LLM decision if none of the above rules apply
+        # This handles edge cases not covered by explicit rules
             
     if category == "incorrect_amount":
         receipt_data = gathered_data.get("receipt_verification", {})
@@ -741,11 +748,15 @@ def _execute_decision_actions(
             actions_taken.append(f"⚖️ CHARGEBACK: Network claim filed (Visa Code 13.1) to recover ${amount} from merchant.")
             
         elif category == "refund_not_received":
-            # If approved, escalate directly to a network chargeback
+            # Issue provisional credit immediately to customer
+            banking_tools.initiate_refund(transaction_id, amount, "Provisional credit for unreceived merchant refund")
+            logger.info(f"[DECISION AGENT] Provisional credit issued: ${amount} for unreceived refund {transaction_id}")
+            actions_taken.append(f"💰 PROVISIONAL CREDIT: ${amount} credited to account immediately.")
+            
+            # Then escalate to network chargeback to recover from merchant
             banking_tools.initiate_chargeback(transaction_id, amount, "4853", "Merchant failed to process refund in timeframe")
             logger.info(f"[DECISION AGENT] Network chargeback submitted for unreceived refund: {transaction_id}")
-            actions_taken.append(f"⚖️ CHARGEBACK: Network claim filed (Code 4853) to recover ${amount} due to unreceived refund.")
-            # Note: We do not call initiate_refund here yet; customer must wait for provisional credit batch job
+            actions_taken.append(f"⚖️ CHARGEBACK: Network claim filed (Code 4853) to recover ${amount} from merchant.")
             
         elif category == "subscription_cancellation":
             banking_tools.initiate_refund(transaction_id, amount, "Subscription charged after cancellation")

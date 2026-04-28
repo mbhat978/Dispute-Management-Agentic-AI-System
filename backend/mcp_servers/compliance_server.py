@@ -28,6 +28,8 @@ Rule 9: Merchant disputes for unreceived services require human review. Chargeba
 Rule 10: Incorrect amount disputes can be auto-approved for a partial refund ONLY IF the verified receipt amount is lower than the billed ledger amount.
 
 Rule 11: For 'Refund Not Received' cases, if the gateway status is 'Refund Pending at Gateway', the dispute must be auto-rejected with instructions for the customer to wait 3-5 business days.
+
+Rule 12: For 'Refund Not Received' cases, if the merchant has not initiated a refund and the customer provides valid return evidence (receipt, tracking, etc.), the dispute should be auto-approved with provisional credit issued immediately.
 """.strip()
 
 

@@ -770,8 +770,6 @@ def check_merchant_refund_status(transaction_id: int) -> Dict[str, Any]:
         >>> print(status['refund_status'])
         Refund Pending at Gateway
     """
-    import random
-    
     db = SessionLocal()
     try:
         # Verify transaction exists
@@ -785,21 +783,33 @@ def check_merchant_refund_status(transaction_id: int) -> Dict[str, Any]:
                 "transaction_id": transaction_id
             }
         
-        # Randomly determine refund status (simulating external API call)
-        statuses = [
-            "Refund Pending at Gateway",
-            "No Refund Initiated by Merchant"
-        ]
-        refund_status = random.choice(statuses)
+        # Check if refund has already been processed
+        refunded_amount = cast(float, getattr(transaction, "refunded_amount", 0.0))
+        transaction_amount = cast(float, transaction.amount)
         
-        # Generate appropriate message and recommendation
-        if refund_status == "Refund Pending at Gateway":
+        # Calculate days since transaction
+        transaction_date = transaction.transaction_date
+        if isinstance(transaction_date, str):
+            transaction_date = datetime.fromisoformat(transaction_date)
+        days_since_transaction = (datetime.utcnow() - transaction_date).days
+        
+        # Determine refund status based on actual conditions
+        # If refund already processed, return completed status
+        if refunded_amount > 0:
+            refund_status = "Refund Completed"
+            message = f"Refund of ${refunded_amount:.2f} has been completed for transaction {transaction_id}."
+            recommendation = "Refund has been processed. Customer should see it in their account."
+        # If transaction is very recent (< 7 days), refund might be pending at gateway
+        elif days_since_transaction < 7:
+            refund_status = "Refund Pending at Gateway"
             message = (f"Refund for transaction {transaction_id} is pending at the payment gateway. "
                       f"The merchant has initiated the refund, but it is still being processed.")
             recommendation = "Wait 3-5 business days for gateway processing. If not received, escalate to gateway support."
+        # If transaction is older (>= 7 days), merchant likely hasn't initiated refund
         else:
+            refund_status = "No Refund Initiated by Merchant"
             message = (f"No refund has been initiated by merchant {transaction.merchant_name} "
-                      f"for transaction {transaction_id}.")
+                      f"for transaction {transaction_id}. Transaction is {days_since_transaction} days old.")
             recommendation = "Contact merchant to initiate refund or consider chargeback if merchant is unresponsive."
         
         result = {
