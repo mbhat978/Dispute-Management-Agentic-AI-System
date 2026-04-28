@@ -281,9 +281,6 @@ AVAILABLE TOOLS:
 9. verify_receipt_amount - Verifies customer claimed receipt amount against the ledger
    Use when: 'incorrect_amount' dispute. You MUST extract the customer's claimed/expected amount from their query and pass it as a float in 'claimed_amount' in the input.
    
-10. initiate_chargeback - Initiates a chargeback with the card network
-    Use when: 'merchant_dispute'. Pass a summary of the issue as 'reason' in the input.
-
 11. analyze_receipt_evidence - Analyzes a Base64 receipt image using Vision OCR to extract merchant name and charged amount
     Use when: Customer claims 'incorrect_amount' AND a receipt image is available (receipt_image_base64 exists in state).
     CRITICAL: If the customer claims an incorrect amount and the state contains receipt_image_base64, you MUST use this tool to extract the printed amount and compare it against the ledger amount before making a recommendation.
@@ -456,13 +453,6 @@ def _rule_based_plan(
             "data_key": "receipt_verification",
             "input": {"transaction_id": transaction_id, "claimed_amount": 0.0},
         })
-    elif category == "merchant_dispute":
-        plan.append({
-            "tool": "initiate_chargeback",
-            "data_key": "chargeback_status",
-            "input": {"transaction_id": transaction_id, "reason": "merchant_dispute"},
-        })
-
     return plan
 
 
@@ -481,7 +471,6 @@ def _sanitize_plan(
         "get_loan_details": "loan_details",
         "check_merchant_refund_status": "refund_status",
         "verify_receipt_amount": "receipt_verification",
-        "initiate_chargeback": "chargeback_status",
         "analyze_receipt_evidence": "receipt_analysis",
         "calculate_fraud_risk_score": "fraud_risk_score",
         "detect_dispute_fraud": "dispute_fraud_analysis",
@@ -514,30 +503,6 @@ def _sanitize_plan(
             tool_input = {"customer_id": customer_id, "transaction_id": transaction_id}
         elif tool_name == "verify_receipt_amount":
             tool_input = {"transaction_id": transaction_id, "claimed_amount": tool_input.get("claimed_amount", 0.0)}
-        elif tool_name == "initiate_chargeback":
-            # Get transaction details to obtain amount
-            trans_details = banking_tools.get_transaction_details(transaction_id)
-            amount = trans_details.get("amount", 0.0) if trans_details else 0.0
-            reason = tool_input.get("reason", "customer_dispute")
-            
-            # Map reason to network reason code
-            reason_code_map = {
-                "fraud": "10.4",
-                "merchant_dispute": "13.1",
-                "incorrect_amount": "12.5",
-                "duplicate": "12.6",
-                "failed_transaction": "11.1",
-                "customer_dispute": "13.1"
-            }
-            network_code = reason_code_map.get(reason, "13.1")
-            
-            tool_input = {
-                "transaction_id": transaction_id,
-                "chargeback_amount": amount,
-                "network_reason_code": network_code,
-                "notes": f"Chargeback initiated for {reason}",
-                "reason": reason  # Keep for backward compatibility
-            }
         elif tool_name == "calculate_fraud_risk_score":
             tool_input = {"transaction_id": transaction_id, "customer_id": customer_id}
         elif tool_name == "detect_dispute_fraud":
@@ -610,13 +575,6 @@ def _execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
         )
     if tool_name == "verify_receipt_amount":
         return banking_tools.verify_receipt_amount(tool_input["transaction_id"], tool_input.get("claimed_amount", 0.0))
-    if tool_name == "initiate_chargeback":
-        return banking_tools.initiate_chargeback(
-            tool_input["transaction_id"],
-            tool_input.get("chargeback_amount", 0.0),
-            tool_input.get("network_reason_code", "13.1"),
-            tool_input.get("notes", "Chargeback initiated")
-        )
     if tool_name == "analyze_receipt_evidence":
         result_str = banking_tools.analyze_receipt_evidence(
             tool_input.get("receipt_base64", ""),
@@ -667,7 +625,7 @@ def _assess_evidence(
         "refund_not_received": {"transaction_details", "refund_status"},
         "failed_transaction": {"transaction_details"},
         "incorrect_amount": {"transaction_details", "receipt_verification"},
-        "merchant_dispute": {"transaction_details", "chargeback_status"},
+        "merchant_dispute": {"transaction_details", "delivery_status"},
         "unknown": {"transaction_details"},
     }
 
