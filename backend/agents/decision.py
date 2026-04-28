@@ -618,14 +618,17 @@ def _validate_decision_against_rules(
         delivery_data = gathered_data.get("delivery_status", {})
         tracking_status = delivery_data.get("status", "")
         
+        reputation_data = gathered_data.get("merchant_reputation", {})
+        trust_level = reputation_data.get("trust_level", "TRUSTED")
+        
         # Rule: Conflicting Evidence Detection
-        # If the customer filed a non-delivery dispute, but the carrier API claims it was delivered,
-        # we cannot blindly auto-approve OR auto-reject. We must route to a human for porch-piracy/signature investigation.
-        if tracking_status == "delivered":
-            return "human_review_required", "Conflicting evidence: Carrier tracking indicates 'delivered', requiring human review to investigate potential misdelivery or stolen goods."
+        # If tracking says delivered, but customer claims non-delivery/empty box, route to human...
+        # UNLESS the merchant is a known scammer (UNTRUSTED).
+        if tracking_status == "delivered" and trust_level != "UNTRUSTED":
+            return "human_review_required", "Conflicting evidence: Carrier tracking indicates 'delivered', requiring human review to investigate potential misdelivery."
             
         if proposed_decision == "auto_approved":
-            # Allow the LLM to auto-approve ONLY if there is clear evidence of non-delivery (e.g., lost_in_transit) or merchant non-response
+            # Allow the LLM to auto-approve if merchant is a known scammer or if there is clear non-delivery
             pass
         
     if category == "refund_not_received":
