@@ -39,7 +39,7 @@ def calculate_fraud_risk_score(
         customer_id=transaction.get("customer_id")
     )
     
-    # 1. Velocity Check (30 points max)
+    # 1. Velocity Check (90 points max)
     velocity_score, velocity_factors = check_transaction_velocity(
         transaction, customer_history
     )
@@ -142,13 +142,13 @@ def check_transaction_velocity(
     )
     
     if recent_count > 5:
-        score += 30
+        score += 65  # Mathematically guarantees a HIGH risk level (>=60)
         factors.append(f"CRITICAL: {recent_count} transactions in last hour")
     elif recent_count > 3:
-        score += 20
+        score += 45
         factors.append(f"HIGH: {recent_count} transactions in last hour")
     elif recent_count > 2:
-        score += 10
+        score += 20
         factors.append(f"MEDIUM: {recent_count} transactions in last hour")
     
     # Count transactions in last 24 hours
@@ -159,10 +159,10 @@ def check_transaction_velocity(
     )
     
     if daily_count > 20:
-        score += 15
+        score += 25
         factors.append(f"Unusual velocity: {daily_count} transactions in 24 hours")
     elif daily_count > 10:
-        score += 5
+        score += 15
         factors.append(f"High velocity: {daily_count} transactions in 24 hours")
     
     return score, factors
