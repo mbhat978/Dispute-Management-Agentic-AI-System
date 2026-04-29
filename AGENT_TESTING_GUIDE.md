@@ -50,6 +50,50 @@ python seed_data.py
 
 ---
 
+## 📝 Quick Reference: Test Transaction IDs
+
+After running `python seed_data.py`, use these transaction IDs for testing:
+
+| Scenario | Transaction ID | Customer ID | Customer Name | Merchant | Amount |
+|----------|---------------|-------------|---------------|----------|--------|
+| **1. Fraudulent (International)** | 13 | 1 | Priya Sharma | Harrods Department Store | $250.00 |
+| **2. Merchant Dispute (Amazon)** | 14 | 2 | Rahul Verma | Amazon India | $799.99 |
+| **2b. High-Risk Merchant** | 46 | 2 | Rahul Verma | ShopXYZ Online | $150.00 |
+| **3. ATM Fault** | 15 | 3 | Ananya Patel | ATM Withdrawal | $100.00 |
+| **3b. ATM Success** | 16 | 3 | Ananya Patel | ATM Withdrawal | $50.00 |
+| **4. Duplicate Transaction** | 17-18 | 4 | Vikram Singh | Taj Restaurant | $25.00 |
+| **5. Incorrect Amount** | 19 | 6 | Karthik Menon | Electronics Store | $50.00 |
+| **6. Subscription (Netflix)** | 32 | 5 | Meera Reddy | Netflix | $15.99 |
+| **6b. Active Subscription (Spotify)** | 33-44 | 4 | Vikram Singh | Spotify | $10.99 |
+| **7. EMI Overcharge** | 45 | 4 | Vikram Singh | Loan EMI Payment | $1500.00 |
+| **8. Refund Not Received** | 33 | 5 | Meera Reddy | Fashion Store | $35.00 |
+| **9. Quality Dispute** | 34 | 6 | Karthik Menon | Electronics Mart | $250.00 |
+| **10. Chargeback** | 35 | 1 | Priya Sharma | Online Gadgets | $180.00 |
+
+### Available Banking Tools
+
+The system provides these tools for investigation and resolution:
+
+**Investigation Tools:**
+- `get_transaction_details(transaction_id)` - Get complete transaction info
+- `get_customer_history(customer_id, limit=5)` - Check spending patterns
+- `check_atm_logs(transaction_id)` - Verify ATM dispense status
+- `check_duplicate_transactions(customer_id, merchant, amount, date, hours)` - Find duplicates
+- `get_loan_details(customer_id)` - Check EMI amounts and loan info
+- `check_merchant_refund_status(transaction_id)` - Verify refund status
+- `verify_receipt_amount(transaction_id, claimed_amount)` - Compare receipt vs ledger
+- `analyze_receipt_evidence(receipt_base64, merchant)` - OCR receipt analysis
+- `calculate_timeline_from_evidence(transaction_id, evidence_base64)` - Extract return dates
+
+**Action Tools:**
+- `initiate_refund(transaction_id, amount, reason)` - Process refunds
+- `block_card(customer_id, reason)` - Block fraudulent cards
+- `issue_replacement_card(customer_id, expedited)` - Issue new cards
+- `initiate_chargeback(transaction_id, amount, code, notes)` - Start chargeback
+- `route_to_human(ticket_id, summary)` - Escalate to human review
+
+---
+
 ## Testing Framework
 
 ### How to Test Each Scenario
@@ -109,7 +153,7 @@ Validate that the system automatically detects and approves obvious fraud cases 
 **Input:**
 ```json
 {
-  "transaction_id": 5,
+  "transaction_id": 13,
   "customer_id": 1,
   "category": "fraudulent_transaction",
   "description": "$250 charge in London - I never traveled abroad",
@@ -130,7 +174,7 @@ Validate that the system automatically detects and approves obvious fraud cases 
 - ✅ Routes to Investigator
 
 **Investigator Agent:**
-- ✅ Calls `get_transaction_details(5)`
+- ✅ Calls `get_transaction_details(13)`
 - ✅ Calls `get_customer_history(1)`
 - ✅ Calls `fraud_scorer.calculate_fraud_risk_score()`
 - ✅ Detects: International transaction, no travel history
@@ -142,7 +186,7 @@ Validate that the system automatically detects and approves obvious fraud cases 
 - ✅ Decision: **APPROVE** (refund customer)
 - ✅ Actions:
   - Calls `block_card(1, "Suspected fraud")`
-  - Calls `initiate_refund(5, 250, "Fraudulent transaction")`
+  - Calls `initiate_refund(13, 250, "Fraudulent transaction")`
   - Calls `issue_replacement_card(1, expedited=True)`
 - ✅ Status: `resolved` (auto-decision, no human needed)
 - ✅ Reasoning: "High fraud risk score (85/100). International transaction with no travel history. Card blocked and refund initiated."
@@ -150,7 +194,7 @@ Validate that the system automatically detects and approves obvious fraud cases 
 **Validation:**
 ```sql
 -- Check dispute record
-SELECT * FROM dispute_tickets WHERE transaction_id = 5;
+SELECT * FROM dispute_tickets WHERE transaction_id = 13;
 -- Should show: status='resolved', decision='approve', confidence>0.8
 
 -- Check audit trail
@@ -163,8 +207,8 @@ SELECT * FROM audit_trail WHERE dispute_id = <dispute_id> ORDER BY timestamp;
 **Input:**
 ```json
 {
-  "transaction_id": 10,
-  "customer_id": 2,
+  "transaction_id": 13,
+  "customer_id": 1,
   "category": "fraudulent_transaction",
   "description": "5 transactions in 30 minutes - my card was stolen",
   "additional_context": {
@@ -194,8 +238,8 @@ Validate that merchant disputes require human review due to insufficient clarity
 **Input:**
 ```json
 {
-  "transaction_id": 15,
-  "customer_id": 3,
+  "transaction_id": 14,
+  "customer_id": 2,
   "category": "merchant_dispute",
   "description": "Ordered iPhone from Amazon, never received it",
   "additional_context": {
@@ -216,8 +260,8 @@ Validate that merchant disputes require human review due to insufficient clarity
 - ✅ Routes to Investigator
 
 **Investigator Agent:**
-- ✅ Calls `get_transaction_details(15)`
-- ✅ Calls `get_delivery_tracking_status(15, "TRK123456")`
+- ✅ Calls `get_transaction_details(14)`
+- ✅ Calls `get_delivery_tracking_status(14, "TRK123456")`
 - ✅ Calls `check_merchant_reputation_score("Amazon India")`
 - ✅ Calls `get_merchant_dispute_history("Amazon India")`
 - ✅ Evidence gathered:
@@ -237,7 +281,7 @@ Validate that merchant disputes require human review due to insufficient clarity
 
 **Validation:**
 ```sql
-SELECT * FROM dispute_tickets WHERE transaction_id = 15;
+SELECT * FROM dispute_tickets WHERE transaction_id = 14;
 -- Should show: status='pending_review', decision='route_to_human'
 ```
 
@@ -246,8 +290,8 @@ SELECT * FROM dispute_tickets WHERE transaction_id = 15;
 **Input:**
 ```json
 {
-  "transaction_id": 20,
-  "customer_id": 4,
+  "transaction_id": 46,
+  "customer_id": 2,
   "category": "merchant_dispute",
   "description": "Ordered gadget, received empty box",
   "additional_context": {
@@ -276,12 +320,12 @@ Validate ATM log checking and technical fault detection.
 **Input:**
 ```json
 {
-  "transaction_id": 25,
-  "customer_id": 5,
+  "transaction_id": 15,
+  "customer_id": 3,
   "category": "atm_dispute",
   "description": "ATM debited $100 but no cash came out",
   "additional_context": {
-    "atm_id": "ATM_001",
+    "atm_id": "ATM_MUM_BKC_001",
     "amount": 100,
     "time": "2024-01-20T14:30:00Z"
   }
@@ -291,22 +335,22 @@ Validate ATM log checking and technical fault detection.
 **Expected Agent Behavior:**
 
 **Investigator Agent:**
-- ✅ Calls `check_atm_logs(25)`
+- ✅ Calls `check_atm_logs(15)`
 - ✅ ATM log shows: `status_code: "DISPENSE_FAULT"`, `cash_dispensed: false`
 - ✅ Evidence: Clear hardware fault
 
 **Decision Agent:**
 - ✅ Decision: **APPROVE**
 - ✅ Reasoning: "ATM logs confirm dispense fault. No cash dispensed."
-- ✅ Actions: `initiate_refund(25, 100, "ATM hardware fault")`
+- ✅ Actions: `initiate_refund(15, 100, "ATM hardware fault")`
 
 ### Test Case 3.2: ATM - Cash Dispensed Successfully
 
 **Input:**
 ```json
 {
-  "transaction_id": 30,
-  "customer_id": 6,
+  "transaction_id": 16,
+  "customer_id": 3,
   "category": "atm_dispute",
   "description": "Claiming ATM didn't give cash",
   "additional_context": {
@@ -332,8 +376,8 @@ Validate duplicate transaction detection.
 **Input:**
 ```json
 {
-  "transaction_id": 35,
-  "customer_id": 7,
+  "transaction_id": 17,
+  "customer_id": 4,
   "category": "duplicate_transaction",
   "description": "Charged twice for same restaurant bill",
   "additional_context": {
@@ -347,13 +391,13 @@ Validate duplicate transaction detection.
 **Expected Agent Behavior:**
 
 **Investigator Agent:**
-- ✅ Calls `check_duplicate_transactions(7, "Taj Restaurant", 25, "2024-01-20", 24)`
+- ✅ Calls `check_duplicate_transactions(4, "Taj Restaurant", 25, "2024-01-20", 24)`
 - ✅ Finds: 2 identical transactions within 5 minutes
 - ✅ Evidence: Clear duplicate
 
 **Decision Agent:**
 - ✅ Decision: **APPROVE**
-- ✅ Actions: `initiate_refund(35, 25, "Duplicate transaction")`
+- ✅ Actions: `initiate_refund(18, 25, "Duplicate transaction")`
 - ✅ Reasoning: "Found duplicate transaction for same merchant and amount within 5 minutes."
 
 ---
@@ -368,8 +412,8 @@ Validate receipt analysis and amount verification.
 **Input:**
 ```json
 {
-  "transaction_id": 40,
-  "customer_id": 8,
+  "transaction_id": 19,
+  "customer_id": 6,
   "category": "incorrect_amount",
   "description": "Charged $50 but receipt shows $45",
   "additional_context": {
@@ -386,12 +430,12 @@ Validate receipt analysis and amount verification.
 **Investigator Agent:**
 - ✅ Calls `analyze_receipt_evidence(receipt_base64, "Electronics Store")`
 - ✅ OCR extracts: `amount: 45`, `merchant: "Electronics Store"`
-- ✅ Calls `verify_receipt_amount(40, 45)`
+- ✅ Calls `verify_receipt_amount(19, 45)`
 - ✅ Discrepancy: $5 overcharge
 
 **Decision Agent:**
 - ✅ Decision: **APPROVE** (partial refund)
-- ✅ Actions: `initiate_refund(40, 5, "Overcharged - receipt verified")`
+- ✅ Actions: `initiate_refund(19, 5, "Overcharged - receipt verified")`
 - ✅ Reasoning: "Receipt analysis confirms customer was overcharged by $5."
 
 ---
@@ -406,8 +450,8 @@ Validate subscription cancellation verification.
 **Input:**
 ```json
 {
-  "transaction_id": 45,
-  "customer_id": 9,
+  "transaction_id": 32,
+  "customer_id": 5,
   "category": "subscription_dispute",
   "description": "Cancelled Netflix in December but charged in January",
   "additional_context": {
@@ -422,15 +466,15 @@ Validate subscription cancellation verification.
 **Expected Agent Behavior:**
 
 **Investigator Agent:**
-- ✅ Calls `check_subscription_status(9, "Netflix")`
+- ✅ Calls `get_customer_history(5)` to check subscription pattern
 - ✅ Detects: Recurring monthly subscription ($15.99)
-- ✅ Calls `verify_subscription_cancellation(9, "Netflix", "2023-12-15")`
+- ✅ Analyzes: 11 months of charges, then gap, then disputed charge
 - ✅ Finds: Charge occurred 31 days after claimed cancellation
 - ✅ Evidence: Cancellation claim appears valid
 
 **Decision Agent:**
 - ✅ Decision: **APPROVE**
-- ✅ Actions: `initiate_refund(45, 15.99, "Subscription charged after cancellation")`
+- ✅ Actions: `initiate_refund(32, 15.99, "Subscription charged after cancellation")`
 - ✅ Reasoning: "Customer cancelled subscription on 2023-12-15 but was charged on 2024-01-15. Approve refund."
 
 ### Test Case 6.2: Active Subscription - No Cancellation
@@ -438,8 +482,8 @@ Validate subscription cancellation verification.
 **Input:**
 ```json
 {
-  "transaction_id": 50,
-  "customer_id": 10,
+  "transaction_id": 44,
+  "customer_id": 4,
   "category": "subscription_dispute",
   "description": "I don't recognize this charge",
   "additional_context": {
@@ -467,8 +511,8 @@ Validate loan EMI verification.
 **Input:**
 ```json
 {
-  "transaction_id": 55,
-  "customer_id": 11,
+  "transaction_id": 45,
+  "customer_id": 4,
   "category": "loan_dispute",
   "subcategory": "emi_amount_error",
   "description": "Charged $1500 EMI but should be $1200",
@@ -482,14 +526,14 @@ Validate loan EMI verification.
 **Expected Agent Behavior:**
 
 **Investigator Agent:**
-- ✅ Calls `get_loan_details(11)`
+- ✅ Calls `get_loan_details(4)`
 - ✅ Retrieves: EMI schedule, outstanding balance
 - ✅ Verifies: Actual EMI is $1200
 - ✅ Discrepancy: $300 overcharge
 
 **Decision Agent:**
 - ✅ Decision: **APPROVE**
-- ✅ Actions: `initiate_refund(55, 300, "EMI overcharge")`
+- ✅ Actions: `initiate_refund(45, 300, "EMI overcharge")`
 - ✅ Reasoning: "Loan records confirm EMI should be $1200. Customer overcharged by $300."
 
 ---
@@ -504,8 +548,8 @@ Validate refund timeline tracking and escalation.
 **Input:**
 ```json
 {
-  "transaction_id": 60,
-  "customer_id": 12,
+  "transaction_id": 33,
+  "customer_id": 5,
   "category": "refund_not_received",
   "description": "Merchant promised refund 10 days ago, still not received",
   "additional_context": {
@@ -519,14 +563,14 @@ Validate refund timeline tracking and escalation.
 **Expected Agent Behavior:**
 
 **Investigator Agent:**
-- ✅ Calls `get_refund_timeline(60)`
+- ✅ Calls `check_merchant_refund_status(33)`
 - ✅ Timeline shows: 10 days elapsed, stage: "merchant_escalation"
-- ✅ Calls `check_merchant_refund_status(60)`
 - ✅ Status: "pending" (merchant hasn't processed)
+- ✅ Calls `calculate_timeline_from_evidence(33, evidence_base64)` if evidence provided
 
 **Decision Agent:**
 - ✅ Decision: **APPROVE** (escalate to chargeback)
-- ✅ Actions: `initiate_chargeback(60, 35, "4853", "Merchant failed to refund within 7 days")`
+- ✅ Actions: `initiate_chargeback(33, 35, "4853", "Merchant failed to refund within 7 days")`
 - ✅ Reasoning: "Merchant refund delayed >7 days. Escalating to chargeback."
 
 ### Test Case 8.2: Bank Processing Delay (>14 days)
@@ -549,8 +593,8 @@ Validate handling of subjective disputes.
 **Input:**
 ```json
 {
-  "transaction_id": 65,
-  "customer_id": 13,
+  "transaction_id": 34,
+  "customer_id": 6,
   "category": "quality_dispute",
   "description": "Received damaged product, merchant refusing refund",
   "additional_context": {
@@ -564,8 +608,8 @@ Validate handling of subjective disputes.
 **Expected Agent Behavior:**
 
 **Investigator Agent:**
-- ✅ Calls `check_merchant_reputation_score("Electronics Mart")`
-- ✅ Calls `get_merchant_dispute_history("Electronics Mart")`
+- ✅ Calls `get_transaction_details(34)`
+- ✅ Calls `get_customer_history(6)`
 - ✅ Evidence quality: MEDIUM (subjective claim)
 
 **Decision Agent:**
@@ -585,8 +629,8 @@ Validate chargeback initiation for merchant disputes.
 **Input:**
 ```json
 {
-  "transaction_id": 70,
-  "customer_id": 14,
+  "transaction_id": 35,
+  "customer_id": 1,
   "category": "merchant_dispute",
   "description": "Merchant not responding to refund request for 15 days",
   "additional_context": {
@@ -601,7 +645,7 @@ Validate chargeback initiation for merchant disputes.
 
 **Decision Agent:**
 - ✅ Decision: **APPROVE** (chargeback)
-- ✅ Actions: `initiate_chargeback(70, 180, "4855", "Merchant non-response >14 days")`
+- ✅ Actions: `initiate_chargeback(35, 180, "4855", "Merchant non-response >14 days")`
 - ✅ Reasoning: "Merchant failed to respond within 14 days. Initiating chargeback per policy."
 
 ---
@@ -610,18 +654,25 @@ Validate chargeback initiation for merchant disputes.
 
 ### ✅ Triage Agent Validation
 
-- [ ] Correctly classifies all 15 dispute categories
+- [ ] Correctly classifies all dispute categories
 - [ ] Confidence scores are reasonable (>70% for clear cases)
 - [ ] Routes to investigator for all cases
 - [ ] Handles ambiguous descriptions (asks clarifying questions)
 
 ### ✅ Investigator Agent Validation
 
-- [ ] Calls appropriate tools for each category
+- [ ] Calls appropriate tools for each category:
+  - `get_transaction_details()` - Get transaction info
+  - `get_customer_history()` - Check spending patterns
+  - `check_atm_logs()` - Verify ATM dispense status
+  - `check_duplicate_transactions()` - Find duplicates
+  - `get_loan_details()` - Check EMI amounts
+  - `check_merchant_refund_status()` - Verify refund status
+  - `verify_receipt_amount()` - Compare receipt vs ledger
+  - `analyze_receipt_evidence()` - OCR receipt analysis
+  - `calculate_timeline_from_evidence()` - Extract return dates
 - [ ] Gathers sufficient evidence before decision
 - [ ] Uses fraud scorer for fraud cases
-- [ ] Uses delivery tracking for merchant disputes
-- [ ] Uses subscription tools for recurring charges
 - [ ] Uses ATM logs for ATM disputes
 - [ ] Calculates evidence quality score
 - [ ] Routes to decision agent with complete context
@@ -630,7 +681,12 @@ Validate chargeback initiation for merchant disputes.
 
 - [ ] Makes correct approve/deny decisions
 - [ ] Routes to human when evidence is insufficient
-- [ ] Executes appropriate actions (refund, block card, chargeback)
+- [ ] Executes appropriate actions:
+  - `initiate_refund()` - Process refunds
+  - `block_card()` - Block fraudulent cards
+  - `issue_replacement_card()` - Issue new cards
+  - `initiate_chargeback()` - Start chargeback process
+  - `route_to_human()` - Escalate to human review
 - [ ] Provides clear reasoning for all decisions
 - [ ] Respects confidence thresholds
 - [ ] Handles edge cases gracefully

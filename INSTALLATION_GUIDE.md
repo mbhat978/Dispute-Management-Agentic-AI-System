@@ -1,6 +1,6 @@
 # 🚀 Dispute Management Agentic AI System - Installation Guide
 
-Complete step-by-step guide to install and run the Banking Dispute Management System with multi-agent AI capabilities.
+Complete step-by-step guide to install and run the Banking Dispute Management System with multi-agent AI capabilities and MCP (Model Context Protocol) servers.
 
 ---
 
@@ -12,6 +12,7 @@ Complete step-by-step guide to install and run the Banking Dispute Management Sy
 4. [Installation Steps](#installation-steps)
    - [Backend Setup](#backend-setup)
    - [Frontend Setup](#frontend-setup)
+   - [MCP Servers Setup](#mcp-servers-setup)
 5. [Configuration](#configuration)
 6. [Database Setup](#database-setup)
 7. [Running the Application](#running-the-application)
@@ -24,7 +25,7 @@ Complete step-by-step guide to install and run the Banking Dispute Management Sy
 ## 🖥️ System Requirements
 
 - **Operating System**: Windows 10/11, macOS, or Linux
-- **Python**: 3.9 or higher
+- **Python**: 3.9 or higher (3.11+ recommended)
 - **Node.js**: 18.x or higher
 - **npm**: 9.x or higher
 - **RAM**: Minimum 4GB (8GB recommended)
@@ -55,6 +56,11 @@ npm --version
 
 If not installed, download from [nodejs.org](https://nodejs.org/)
 
+**Note:** This project uses:
+- Next.js 16.2.3
+- React 19.2.4
+- These are newer versions that require Node.js 18+ for optimal compatibility
+
 ### 3. Git (Optional but recommended)
 ```bash
 git --version
@@ -71,7 +77,7 @@ You'll need an OpenAI API key for the AI agents to function.
 
 ## 🏗️ Project Overview
 
-This system consists of two main components:
+This system consists of four main components:
 
 ### Backend (FastAPI + Python)
 - **Location**: `backend/` directory
@@ -85,6 +91,18 @@ This system consists of two main components:
 - **Framework**: Next.js 16.x with React 19.x
 - **UI Library**: Shadcn/ui + Tailwind CSS
 - **Port**: 3000
+
+### MCP Servers (Model Context Protocol)
+- **Core Banking Server**: Port 8001 - Core banking operations
+- **Compliance Server**: Port 8002 - Policy and compliance queries
+- **Enhanced Banking Tools Server**: Port 8003 - Extended banking services & Vision AI
+- **Framework**: FastMCP (SSE transport)
+
+### Multi-Agent System
+- **Triage Agent**: Classifies disputes using ReAct methodology
+- **Investigator Agent**: Gathers evidence via MCP tools
+- **Decision Agent**: Makes final decisions with business rules
+- **Orchestrator**: LangGraph-based workflow coordination
 
 ---
 
@@ -125,16 +143,22 @@ pip install -r requirements.txt
 ```
 
 **Expected packages installed:**
-- fastapi==0.109.0
-- uvicorn[standard]==0.27.0
-- sqlalchemy==2.0.25
-- pydantic==2.5.3
-- langgraph==0.0.26
-- langchain==0.1.10
-- langchain-openai==0.0.8
-- openai==1.12.0
-- python-dotenv==1.0.1
+- fastapi - Web framework
+- uvicorn[standard] - ASGI server
+- sqlalchemy - ORM
+- pydantic - Data validation
+- langgraph - Agent orchestration
+- langchain - LLM framework
+- langchain-openai - OpenAI integration
+- openai - OpenAI API client
+- python-dotenv - Environment variables
+- mcp - Model Context Protocol
+- loguru - Logging
+- aiosqlite - LangGraph SQLite checkpoint support
+- slowapi / tenacity / structlog - runtime utilities
 - And other dependencies
+
+**Validated source of truth:** use `backend/requirements.txt` for backend dependency versions. The root `requirements.txt` is older and does not fully reflect the backend runtime.
 
 **Installation time**: 2-5 minutes depending on internet speed.
 
@@ -174,6 +198,85 @@ npm list next react
 ```
 
 Should show installed versions without errors.
+
+---
+
+### MCP Servers Setup
+
+The system uses three MCP (Model Context Protocol) servers for tool execution:
+
+#### Step 1: Verify MCP Server Files
+
+Check that MCP server files exist:
+```bash
+cd backend/mcp_servers
+ls -la  # macOS/Linux
+dir     # Windows
+```
+
+You should see:
+- `core_banking_server.py` - Core banking MCP server
+- `compliance_server.py` - Compliance MCP server
+- `enhanced_banking_tools.py` - Enhanced banking tools MCP server
+- `banking_tools.py` - Shared banking tool implementations used by MCP servers
+
+#### Step 2: Understanding MCP Architecture
+
+MCP servers run as separate processes and communicate via SSE (Server-Sent Events):
+
+```
+┌─────────────────────────────────────────────┐
+│         FastAPI Backend (Port 8000)         │
+│                                             │
+│  ┌─────────────────────────────────────┐   │
+│  │   MCP Client (mcp_client.py)        │   │
+│  │   Connects to all MCP servers       │   │
+│  └─────────────────────────────────────┘   │
+└─────────────────────────────────────────────┘
+              │         │         │
+              ▼         ▼         ▼
+    ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
+    │   Core      │ │ Compliance  │ │ Enhanced    │
+    │  Banking    │ │  Server     │ │ Banking     │
+    │  (8001)     │ │  (8002)     │ │ Tools (8003)│
+    └─────────────┘ └─────────────┘ └─────────────┘
+```
+
+#### Step 3: Available Banking Tools
+
+The MCP servers provide 15+ specialized tools:
+
+**Core Banking Server (Port 8001):**
+- `get_transaction_details`
+- `get_customer_history`
+- `check_atm_logs`
+- `check_duplicate_transactions`
+- `block_card`
+- `issue_replacement_card`
+- `initiate_refund`
+- `route_to_human`
+- `get_loan_details`
+- `check_merchant_refund_status`
+- `verify_receipt_amount`
+- `initiate_chargeback`
+- `analyze_receipt_evidence`
+- `calculate_timeline_from_evidence`
+
+**Compliance Server (Port 8002):**
+- `query_compliance_policy`
+
+**Enhanced Banking Tools Server (Port 8003):**
+- `get_delivery_tracking_status`
+- `check_merchant_reputation_score`
+- `get_merchant_dispute_history`
+- `check_subscription_status`
+- `verify_subscription_cancellation`
+- `get_refund_timeline`
+
+**Important:** the FastAPI backend connects to these servers through SSE endpoints configured in `backend/mcp_client.py`:
+- `http://localhost:8001/sse`
+- `http://localhost:8002/sse`
+- `http://localhost:8003/sse`
 
 ---
 
@@ -225,7 +328,23 @@ OPENAI_MODEL=gpt-4-turbo-preview
 
 # Optional: Set temperature for LLM responses (0.0 to 1.0)
 OPENAI_TEMPERATURE=0.0
+
+# LangSmith Configuration (Optional - for Enterprise Observability)
+# Sign up at https://smith.langchain.com/ to get API key
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_ENDPOINT="https://api.smith.langchain.com"
+LANGCHAIN_API_KEY="your_langsmith_api_key_here"
+LANGCHAIN_PROJECT="dispute-management-agents"
 ```
+
+**About LangSmith (Optional):**
+- LangSmith provides observability and debugging for LangChain applications
+- It's **completely optional** - the system works without it
+- If you want to use it:
+  1. Sign up at [smith.langchain.com](https://smith.langchain.com/)
+  2. Get your API key from the dashboard
+  3. Add it to your `.env` file
+- If you don't want to use it, simply leave the default values or remove these lines
 
 **⚠️ Important**: 
 - Never commit `.env` file to version control
@@ -269,37 +388,29 @@ source venv/bin/activate
 python seed_data.py
 ```
 
-**Expected output:**
+**Expected output (abridged):**
 ```
 Clearing existing data...
-Database cleared.
+✓ Database cleared.
 
-Creating customers...
-✅ Created 5 customers
+📋 Creating 6 customers...
+💰 Creating loan accounts...
+✅ Creating common successful transactions...
+🎯 Creating test scenario transactions...
+📊 Creating High-Risk Merchant History: ShopXYZ Online
 
-Creating transactions...
-✅ Created 7 transactions
-
-Creating ATM logs...
-✅ Created 2 ATM logs
-
-Creating dispute tickets...
-✅ Created 5 dispute tickets
-
-Creating audit logs...
-✅ Created 5 audit logs
-
-========================================
-DATABASE SEEDING COMPLETED SUCCESSFULLY!
-========================================
-
-Summary:
-- 5 Customers created
-- 7 Transactions created
-- 2 ATM Logs created
-- 5 Dispute Tickets created
-- 5 Audit Logs created
+DATABASE SEEDING SUMMARY
+...
+✅ Database seeding completed successfully!
 ```
+
+**Validated notes from the actual seed script:**
+- Creates **6 customers**
+- Creates **1 loan account**
+- Creates common transactions plus scenario-specific transactions for all 10 scenarios
+- Creates ATM logs for ATM scenarios
+- Creates **15 historical ShopXYZ disputes** for risk-pattern testing
+- Uses the shared SQLite database at `backend/dispute_management.db`
 
 ### Step 4: Verify Database Creation
 Check that `dispute_management.db` file exists:
@@ -316,49 +427,112 @@ ls -lh dispute_management.db
 
 ### What Data Was Created?
 
-The seed script creates realistic test scenarios:
+The seed script creates comprehensive test scenarios for all 10 dispute types:
 
-1. **5 Customers** with different account tiers (Basic, Premium, Gold)
-2. **7 Transactions** including:
-   - High-value international transactions
-   - Failed transactions
-   - Duplicate charges
-   - ATM withdrawals
-3. **5 Dispute Tickets** covering:
-   - Fraud detection scenarios
-   - ATM hardware faults
-   - Duplicate charge disputes
-   - Merchant disputes
-4. **ATM Logs** with hardware fault records
-5. **Audit Logs** simulating AI agent actions
+1. **6 Customers** with different profiles:
+   - Priya Sharma (Premium) - Fraud scenarios
+   - Rahul Verma (Gold) - Merchant disputes
+   - Ananya Patel (Basic) - ATM failures
+   - Vikram Singh (Premium) - Duplicate charges and EMI disputes
+   - Meera Reddy (Gold) - Subscription and refund disputes
+   - Karthik Menon (Basic) - Incorrect amount and quality/service disputes
 
-For detailed information, see `DATABASE_SEED_SUMMARY.md`.
+2. **25+ Transactions** covering:
+   - International fraud patterns
+   - Merchant disputes (Amazon, high-risk merchants)
+   - ATM withdrawals with hardware faults
+   - Duplicate charges within 5 minutes
+   - Overcharged amounts
+   - Subscription charges
+   - Loan EMI payments
+   - Refund scenarios
+   - Quality/service disputes
+   - Chargeback scenarios
+
+3. **ATM Logs** with realistic fault codes:
+   - `DISPENSE_FAULT`
+   - `200_DISPENSED`
+
+4. **15 Historic Disputes** for one customer:
+   - Establishes high-risk merchant patterns
+   - Tests fraud detection algorithms
+
+5. **Loan Accounts** for EMI dispute testing
+6. **Transaction IDs for quick testing** are printed by the seed script summary
+
+For detailed scenario information, see `AGENT_TESTING_GUIDE.md`.
 
 ---
 
 ## 🚀 Running the Application
 
-You'll need **TWO terminal windows** - one for backend, one for frontend.
+### Quick Start (Recommended)
 
-### Terminal 1: Start Backend Server
+Use the provided batch file to start all servers at once:
+
+**Windows:**
+```bash
+start_cluster.bat
+```
+
+This will automatically start:
+1. Core Banking MCP Server (Port 8001)
+2. Compliance MCP Server (Port 8002)
+3. Enhanced Banking Tools MCP Server (Port 8003)
+4. FastAPI Backend (Port 8000)
+5. Next.js Frontend (Port 3000)
+
+**Validated behavior from `start_cluster.bat`:**
+- Assumes a Python virtual environment already exists at the project root as `venv`
+- Launches MCP servers first, waits 5 seconds, then starts backend and frontend
+- Starts frontend with `npm run dev`
+- Starts backend with `uvicorn main:app --host 0.0.0.0 --port 8000`
+
+**Important:** `run_app.bat` is a simpler launcher that creates `backend/venv` if needed, installs dependencies, and starts only backend + frontend. It does **not** start MCP servers, so use `start_cluster.bat` for full agent workflows.
+
+### Manual Start (Alternative)
+
+If you prefer to start servers individually, you'll need **five terminal windows**.
+
+#### Terminal 1: Core Banking MCP Server
+```bash
+cd backend
+python mcp_servers/core_banking_server.py
+```
+
+#### Terminal 2: Compliance MCP Server
+```bash
+cd backend
+python mcp_servers/compliance_server.py
+```
+
+#### Terminal 3: Enhanced Banking Tools MCP Server
+```bash
+cd backend
+python mcp_servers/enhanced_banking_tools.py
+```
+
+#### Terminal 4: FastAPI Backend
 
 #### Step 1: Navigate to Backend and Activate Environment
 ```bash
 cd backend
-# Activate venv if not already active
-# Windows: .\venv\Scripts\Activate.ps1
-# macOS/Linux: source venv/bin/activate
+# Windows PowerShell
+.\venv\Scripts\Activate.ps1
+
+# Windows Command Prompt
+venv\Scripts\activate.bat
+
+# macOS/Linux
+source venv/bin/activate
 ```
 
 #### Step 2: Start FastAPI Server
 ```bash
-python main.py
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-**Alternative method using uvicorn directly:**
-```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
+**Note:** `python main.py` is not the documented startup path in this repository. Use `uvicorn main:app ...` as used by the batch launchers.
 
 **Expected output:**
 ```
@@ -376,7 +550,7 @@ INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
 
 ---
 
-### Terminal 2: Start Frontend Server
+#### Terminal 5: Next.js Frontend
 
 #### Step 1: Open New Terminal and Navigate to Frontend
 ```bash
@@ -430,8 +604,7 @@ http://localhost:8000/health
 Expected response:
 ```json
 {
-  "status": "healthy",
-  "database": "connected"
+  "status": "healthy"
 }
 ```
 
@@ -471,26 +644,63 @@ You should see the Banking Dispute Management System homepage.
 3. **Check Employee Dashboard**: `http://localhost:3000/employee`
 4. **View dispute tickets and their AI agent processing**
 
-### 4. Verify AI Agent Functionality
+### 4. Verify MCP Servers
 
-Test the banking tools:
+Check that all MCP servers are running:
+
 ```bash
-cd backend
-python test_banking_tools.py
+# Check ports
+netstat -an | findstr "8001 8002 8003"  # Windows
+lsof -i :8001,8002,8003                  # macOS/Linux
 ```
 
-Expected output showing all 7 tools tested successfully:
-```
-Testing Banking Tools...
-✅ get_transaction_details - PASSED
-✅ get_customer_history - PASSED
-✅ check_atm_logs - PASSED
-✅ check_duplicate_transactions - PASSED
-✅ block_card - PASSED
-✅ initiate_refund - PASSED
-✅ route_to_human - PASSED
+Expected: All three ports should show LISTENING status.
 
-All tests passed! ✅
+### 5. Verify Dispute and Analytics APIs
+
+Useful endpoints confirmed from `backend/main.py`:
+
+```bash
+curl http://localhost:8000/api/disputes
+curl http://localhost:8000/api/disputes/1
+curl http://localhost:8000/api/analytics
+```
+
+### 6. Verify Streaming Endpoints
+
+The backend also exposes SSE streams for live UI updates:
+
+```bash
+http://localhost:8000/api/disputes/stream
+http://localhost:8000/api/logs/stream
+```
+
+### 7. Test Complete Dispute Processing
+
+Submit a test dispute through the UI or API:
+
+```bash
+curl -X POST http://localhost:8000/api/disputes/process \
+  -H "Content-Type: application/json" \
+  -d '{
+    "transaction_id": 15,
+    "customer_id": 3,
+    "customer_query": "ATM did not dispense cash but my account was debited"
+  }'
+```
+
+Expected response with full agent workflow:
+```json
+{
+  "status": "success",
+  "ticket_id": 1,
+  "dispute_category": "atm_failure",
+  "final_decision": "auto_approved",
+  "triage_confidence": 0.95,
+  "investigation_confidence": 0.92,
+  "decision_confidence": 0.95,
+  "audit_trail": [...]
+}
 ```
 
 ---
@@ -499,7 +709,36 @@ All tests passed! ✅
 
 ### Common Issues and Solutions
 
-#### Issue 1: Port Already in Use
+#### Issue 1: MCP Servers Not Starting
+
+**Error**: `Address already in use` for ports 8001, 8002, or 8003
+
+**Solution**:
+```bash
+# Windows - Kill processes on MCP ports
+netstat -ano | findstr "8001 8002 8003"
+taskkill /PID <PID> /F
+
+# macOS/Linux
+lsof -ti:8001,8002,8003 | xargs kill -9
+```
+
+Then restart using `start_cluster.bat` or manually.
+
+#### Issue 2: MCP Connection Errors
+
+**Error**: `Failed to connect to MCP server` or `Connection refused`
+
+**Solution**:
+1. Verify MCP servers are running:
+   ```bash
+   netstat -an | findstr "8001 8002 8003"
+   ```
+2. Check MCP server logs for errors
+3. Ensure no firewall blocking localhost connections
+4. Restart MCP servers individually to identify the failing one
+
+#### Issue 3: Port Already in Use (Backend/Frontend)
 
 **Error**: `Address already in use` or `Port 8000/3000 is already in use`
 
@@ -650,22 +889,64 @@ pip install -r requirements.txt
 ### 1. Explore the System
 
 - **API Documentation**: `http://localhost:8000/docs`
-- **Banking Tools Documentation**: See `BANKING_TOOLS_DOCUMENTATION.md`
-- **Database Schema**: See `DATABASE_SEED_SUMMARY.md`
-- **Agent Architecture**: See `frontend/AGENTS.md`
+- **Agent Testing Guide**: See `AGENT_TESTING_GUIDE.md`
+- **Project Documentation**: See `PROJECT_DOCUMENTATION.md`
+- **MCP Architecture**: See MCP server files in `backend/mcp_servers/`
 
-### 2. Test AI Agents
+### 2. Test All 10 Dispute Scenarios
 
-The system includes multiple AI agents:
-- **Triage Agent**: Routes disputes to appropriate handlers
-- **Investigator Agent**: Gathers evidence using banking tools
-- **Decision Agent**: Makes resolution decisions
-- **Orchestrator Agent**: Coordinates multi-agent workflow
+Follow the comprehensive testing guide:
+```bash
+# Open the testing guide
+cat AGENT_TESTING_GUIDE.md
+```
 
-Test dispute resolution:
+Test scenarios include:
+1. Fraudulent Transaction (Auto-Decision)
+2. Merchant Dispute - Item Not Delivered (Human-in-Loop)
+3. ATM Dispute - Cash Not Dispensed
+4. Duplicate Transaction
+5. Incorrect Amount - Overcharged
+6. Subscription Dispute
+7. Loan/EMI Dispute
+8. Refund Not Received
+9. Quality/Service Dispute
+10. Chargeback Scenario
+
+### 3. Understand the Multi-Agent System
+
+The system uses a sophisticated ReAct (Reasoning + Acting) architecture:
+
+**Triage Agent** (GPT-3.5-turbo):
+- Classifies disputes into categories
+- Confidence scoring
+- Clarification handling
+
+**Investigator Agent** (GPT-4):
+- Dynamic tool selection via MCP
+- Evidence gathering and validation
+- Iterative re-investigation
+
+**Decision Agent** (GPT-4):
+- Business rule validation
+- Risk assessment
+- Final decision with justification
+
+**Orchestrator** (LangGraph):
+- Workflow coordination
+- Dynamic routing
+- State management
+
+### 4. Test MCP Tools Individually
+
+Test specific banking tools:
 ```bash
 cd backend
-python simulate_disputes.py  # If available
+python -c "
+from mcp_client import call_tool
+result = call_tool('get_transaction_details', transaction_id=1)
+print(result)
+"
 ```
 
 ### 3. Development Workflow
@@ -713,36 +994,63 @@ For production deployment, consider:
 ## 📖 Additional Resources
 
 ### Documentation Files
-- `README.md` - Project overview
-- `BANKING_TOOLS_DOCUMENTATION.md` - Complete banking tools reference
-- `DATABASE_SEED_SUMMARY.md` - Database schema and test data
-- `frontend/AGENTS.md` - AI agent architecture
-- `frontend/CLAUDE.md` - Development notes
+- `README.md` - Project overview and quick start
+- `PROJECT_DOCUMENTATION.md` - Complete system documentation
+- `AGENT_TESTING_GUIDE.md` - Comprehensive testing scenarios
+- `INSTALLATION_GUIDE.md` - This file
+- `IMPLEMENTATION_GAP_ANALYSIS.md` - Feature implementation status
 
 ### API Endpoints Reference
 
 **Health & Info:**
-- `GET /` - Root endpoint
+- `GET /` - Root endpoint, API status
 - `GET /health` - Health check
 
-**Statistics:**
-- `GET /customers/count` - Total customers
-- `GET /transactions/count` - Total transactions
-- `GET /disputes/count` - Total disputes
-
 **Customers:**
-- `GET /customers` - List all customers
-- `GET /customers/{id}` - Get customer details
+- `GET /api/customers` - List all customers
+- `GET /api/customers/{id}/transactions` - Get customer transaction history
 
-**Transactions:**
-- `GET /transactions` - List all transactions
-- `GET /transactions/{id}` - Get transaction details
+**Disputes (Core Endpoints):**
+- `GET /api/disputes` - List all disputes with filters
+- `GET /api/disputes/{id}` - Get dispute details with full audit trail
+- `POST /api/disputes/process` - **Process new dispute through AI workflow** (SSE streaming)
+- `POST /api/disputes/{id}/resolve` - Human resolution of dispute
+- `POST /api/disputes/{id}/approve` - Approve a dispute
+- `POST /api/disputes/{id}/reject` - Reject a dispute
 
-**Disputes:**
-- `GET /disputes` - List all disputes
-- `GET /disputes/{id}` - Get dispute details
-- `POST /disputes` - Create new dispute
-- `PUT /disputes/{id}` - Update dispute
+**Analytics:**
+- `GET /api/analytics` - Executive dashboard metrics (auto-resolution rate, fraud prevention, etc.)
+
+**Key Endpoint Details:**
+
+**POST /api/disputes/process** - Main AI Processing Endpoint
+```json
+Request:
+{
+  "transaction_id": 5,
+  "customer_id": 1,
+  "customer_query": "ATM did not dispense cash but my account was debited"
+}
+
+Response (SSE Stream):
+- Real-time updates as agents process the dispute
+- Final response includes ticket_id, decision, confidence scores, audit trail
+```
+
+**GET /api/analytics** - Dashboard Metrics
+```json
+Response:
+{
+  "total_tickets": 150,
+  "auto_resolved_count": 120,
+  "human_review_count": 30,
+  "auto_resolution_rate": 80.0,
+  "total_fraud_prevented": 45000.00,
+  "fraud_tickets_prevented": 15
+}
+```
+
+For complete API documentation, visit: http://localhost:8000/docs (when backend is running)
 
 ### Technology Stack
 
@@ -787,13 +1095,18 @@ Use this checklist to track your installation progress:
 - [ ] Backend virtual environment created
 - [ ] Backend dependencies installed
 - [ ] Frontend dependencies installed
+- [ ] MCP server dependencies verified
 - [ ] `.env` file created and configured
-- [ ] Database seeded successfully
+- [ ] Database seeded successfully (6 customers, 25+ transactions)
+- [ ] MCP Banking Tools Server running on port 8001
+- [ ] MCP Compliance Server running on port 8002
+- [ ] MCP Core Banking Server running on port 8003
 - [ ] Backend server running on port 8000
 - [ ] Frontend server running on port 3000
 - [ ] API documentation accessible
 - [ ] Frontend homepage loads
-- [ ] Banking tools tests pass
+- [ ] All MCP tools operational
+- [ ] Test dispute processed successfully
 
 ---
 
@@ -810,5 +1123,5 @@ If you've completed all steps, you now have a fully functional Banking Dispute M
 
 ---
 
-*Last Updated: April 2026*
-*Version: 1.0.0*
+*Last Updated: April 29, 2026*
+*Version: 2.0.0 - MCP Enhanced*
