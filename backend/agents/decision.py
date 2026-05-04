@@ -119,6 +119,8 @@ def decision_node(state: DisputeState) -> Dict[str, Any]:
                 proposed_decision=proposed_decision,
                 category=category,
                 gathered_data=gathered_data,
+                fraud_analysis=state.get("fraud_analysis", {}),
+                vision_analysis=state.get("vision_analysis", {}),
                 amount=float(amount),
                 confidence=llm_confidence,
                 customer_tier=str(customer_tier),
@@ -214,21 +216,46 @@ RULE VALIDATION:
             logger.success(f"[DECISION AGENT] ticket_updated | ticket_id={ticket_id} | status={ticket.status}")
 
         for entry in audit_trail:
+            # Extract agent name from entry prefix
+            agent_name = "System"
+            action_type = "thought"
+            
             if "THOUGHT:" in entry or "Triage Agent" in entry or "Clarification Agent" in entry or "Orchestrator:" in entry:
                 action_type = "thought"
                 agent_name = "System"
             elif "ACTION:" in entry:
                 action_type = "tool_call"
-                agent_name = "InvestigatorAgent"
+                # Extract agent name from the entry
+                if "Data Retrieval Agent ACTION:" in entry:
+                    agent_name = "Data Retrieval Agent"
+                elif "Fraud Analyst Agent ACTION:" in entry:
+                    agent_name = "Fraud Analyst Agent"
+                elif "Vision Expert Agent ACTION:" in entry:
+                    agent_name = "Vision Forensics Agent"
+                elif "Supervisor Agent ACTION:" in entry:
+                    agent_name = "Supervisor Agent"
+                elif "Triage Agent ACTION:" in entry:
+                    agent_name = "Triage Agent"
+                else:
+                    agent_name = "Supervisor Agent"  # Default for investigator/supervisor
             elif "OBSERVATION:" in entry:
                 action_type = "observation"
-                agent_name = "InvestigatorAgent"
+                # Extract agent name from the entry
+                if "Data Retrieval Agent OBSERVATION:" in entry:
+                    agent_name = "Data Retrieval Agent"
+                elif "Fraud Analyst Agent OBSERVATION:" in entry:
+                    agent_name = "Fraud Analyst Agent"
+                elif "Vision Expert Agent OBSERVATION:" in entry:
+                    agent_name = "Vision Forensics Agent"
+                elif "Supervisor Agent OBSERVATION:" in entry:
+                    agent_name = "Supervisor Agent"
+                elif "Triage Agent OBSERVATION:" in entry:
+                    agent_name = "Triage Agent"
+                else:
+                    agent_name = "Supervisor Agent"  # Default for investigator/supervisor
             elif "DECISION:" in entry or "Decision Agent ANALYSIS:" in entry:
                 action_type = "decision"
-                agent_name = "DecisionAgent"
-            else:
-                action_type = "thought"
-                agent_name = "System"
+                agent_name = "Decision Agent"
 
             audit_log = models.AuditLog(
                 ticket_id=ticket_id,
@@ -362,7 +389,9 @@ def _generate_decision_reasoning(state: DisputeState) -> Dict[str, Any]:
     Returns a structured decision with reasoning, confidence, and recommendations.
     """
     category = state["dispute_category"]
-    gathered_data = state["gathered_data"]
+    gathered_data = state.get("gathered_data", {})
+    fraud_analysis = state.get("fraud_analysis", {})
+    vision_analysis = state.get("vision_analysis", {})
     query = state["customer_query"]
     summary = state.get("investigation_summary", "")
     triage_confidence = state.get("triage_confidence", 0.0)
@@ -440,8 +469,14 @@ INVESTIGATION SUMMARY:
 COMPLIANCE POLICY TEXT:
 {compliance_policy_text}
 
-GATHERED EVIDENCE:
-{evidence}
+DATA RETRIEVAL REPORT:
+{gathered_data}
+
+FRAUD ANALYSIS REPORT:
+{fraud_analysis}
+
+VISION FORENSICS REPORT:
+{vision_analysis}
 
 Provide your comprehensive analysis and decision:""")
         ])
@@ -454,7 +489,9 @@ Provide your comprehensive analysis and decision:""")
             investigation_confidence=investigation_confidence,
             summary=summary if summary else "No summary provided",
             compliance_policy_text=compliance_policy_text,
-            evidence=json.dumps(gathered_data, indent=2, default=str),
+            gathered_data=json.dumps(gathered_data, indent=2, default=str),
+            fraud_analysis=json.dumps(fraud_analysis, indent=2, default=str),
+            vision_analysis=json.dumps(vision_analysis, indent=2, default=str),
         ))
 
         content = response.content if isinstance(response.content, str) else json.dumps(response.content)
@@ -550,10 +587,13 @@ def _validate_decision_against_rules(
     proposed_decision: str,
     category: str,
     gathered_data: Dict[str, Any],
+    fraud_analysis: Dict[str, Any],
+    vision_analysis: Dict[str, Any],
     amount: float,
     confidence: float,
     customer_tier: str,
 ) -> Tuple[str, str]:
+    
     # CRITICAL SECURITY: Prevent disputes on incoming deposits
     trans_details = gathered_data.get("transaction_details", {})
     if trans_details.get("transaction_type") == "credit":
@@ -595,7 +635,13 @@ def _validate_decision_against_rules(
 
     if category == "fraud":
         trans_details = gathered_data.get("transaction_details", {})
-        fraud_risk = gathered_data.get("fraud_risk_score", {})
+        
+        # Check fraud_analysis dictionary for risk score instead of gathered_data
+        fraud_risk = fraud_analysis.get("fraud_risk_score", {})
+        if not fraud_risk:
+            # Fallback to gathered_data for backward compatibility
+            fraud_risk = gathered_data.get("fraud_risk_score", {})
+        
         risk_score = fraud_risk.get("fraud_risk_score", 0) if isinstance(fraud_risk, dict) else 0
         risk_level = fraud_risk.get("risk_level", "low") if isinstance(fraud_risk, dict) else "low"
         
@@ -634,22 +680,38 @@ def _validate_decision_against_rules(
             pass
         
     if category == "refund_not_received":
-        refund_status = gathered_data.get("refund_status", {})
-        status_str = refund_status.get("refund_status", "") if isinstance(refund_status, dict) else ""
+        import ast
         
-        # Check both standard timeline and new Vision-extracted timeline
-        vision_timeline = gathered_data.get("calculate_timeline_from_evidence", {})
+        refund_status = gathered_data.get("check_merchant_refund_status", {})
+        status_str = refund_status.get("refund_status", "") if isinstance(refund_status, dict) else str(refund_status)
+        
+        # Pull from the new vision_analysis state key!
+        vision_timeline = vision_analysis.get("calculate_timeline_from_evidence", {})
         if isinstance(vision_timeline, str):
             try:
-                vision_timeline = json.loads(vision_timeline)
-            except:
+                vision_timeline = ast.literal_eval(vision_timeline)
+            except Exception:
                 vision_timeline = {}
                 
-        std_timeline = gathered_data.get("refund_timeline", {})
-        
-        # Prioritize the physically verified days_elapsed from Vision
-        days_elapsed = vision_timeline.get("days_elapsed") or std_timeline.get("days_elapsed", 0)
+        std_timeline = gathered_data.get("get_refund_timeline", {})
+        if isinstance(std_timeline, str):
+            try:
+                std_timeline = ast.literal_eval(std_timeline)
+            except Exception:
+                std_timeline = {}
+                
+        days_elapsed = vision_timeline.get("days_elapsed")
+        if days_elapsed is None:
+            days_elapsed = std_timeline.get("days_elapsed", 0)
+            
+        try:
+            days_elapsed = int(days_elapsed)
+        except (ValueError, TypeError):
+            days_elapsed = 0
+            
         is_valid_proof = vision_timeline.get("is_valid_proof", False)
+        if isinstance(is_valid_proof, str):
+            is_valid_proof = is_valid_proof.lower() == 'true'
         
         # Rule 1: Check if refund is pending at gateway
         if "Pending" in status_str:

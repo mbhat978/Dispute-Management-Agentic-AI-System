@@ -63,6 +63,10 @@ class DisputeState(TypedDict):
     audit_trail: List[str]
     final_decision: str
     
+    # Specialist agent outputs
+    fraud_analysis: NotRequired[Dict[str, Any]]
+    vision_analysis: NotRequired[Dict[str, Any]]
+    
     # Human-in-the-loop override field
     human_override: NotRequired[str | None]
     
@@ -85,6 +89,9 @@ class DisputeState(TypedDict):
     decision_quality_score: NotRequired[float]
     escalation_reasons: NotRequired[List[str]]
     human_review_priority: NotRequired[str]
+    
+    # Supervisor/Worker routing
+    routing_plan: NotRequired[List[str]]
 
 
 def initialize_dispute_state(

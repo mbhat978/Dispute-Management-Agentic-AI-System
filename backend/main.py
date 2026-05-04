@@ -1200,7 +1200,10 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
                         agent_names = {
                             "triage": "Triage Agent",
                             "clarification": "Clarification Agent",
-                            "investigator": "Investigation Agent",
+                            "investigator": "Supervisor Agent (Planning)",
+                            "data_retrieval": "Data Retrieval Agent",
+                            "fraud_analyst": "Fraud Analysis Agent",
+                            "vision_expert": "Vision Expert Agent",
                             "re_investigate": "Re-Investigation Coordinator",
                             "decision": "Decision Agent"
                         }
@@ -1232,6 +1235,17 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
                         if "final_decision" in full_state and full_state["final_decision"]:
                             activity_details.append(f"Decision: {full_state['final_decision'].upper()}")
                         
+                        # Log Supervisor's routing plan when investigator node completes
+                        if node_name == "investigator" and "routing_plan" in full_state:
+                            routing_plan = full_state.get("routing_plan", [])
+                            if routing_plan:
+                                plan_agents = ", ".join(routing_plan)
+                                activity_details.append(f"Routing Plan: {plan_agents}")
+                                logger.info(f"[SUPERVISOR PLAN] Routing to specialists: {plan_agents}")
+                            else:
+                                activity_details.append("Routing Plan: Direct to decision (no specialists needed)")
+                                logger.info("[SUPERVISOR PLAN] No specialists needed, routing directly to decision")
+                        
                         if activity_details:
                             logger.info(f"[AGENT STATUS] {' | '.join(activity_details)}")
 
@@ -1242,6 +1256,7 @@ async def process_dispute(request: DisputeProcessRequest, db: Session = Depends(
                             "agent_name": agent_display_name,
                             "message": latest_audit_entry or f"{agent_display_name} is processing the dispute",
                             "activity_summary": " | ".join(activity_details) if activity_details else None,
+                            "routing_plan": full_state.get("routing_plan", []) if node_name == "investigator" else None,
                             "state": {
                                 "dispute_category": full_state.get("dispute_category"),
                                 "final_decision": full_state.get("final_decision"),

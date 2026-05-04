@@ -56,19 +56,20 @@ After running `python seed_data.py`, use these transaction IDs for testing:
 
 | Scenario | Transaction ID | Customer ID | Customer Name | Merchant | Amount |
 |----------|---------------|-------------|---------------|----------|--------|
-| **1. Fraudulent (International)** | 13 | 1 | Priya Sharma | Harrods Department Store | $250.00 |
-| **2. Merchant Dispute (Amazon)** | 14 | 2 | Rahul Verma | Amazon India | $799.99 |
-| **2b. High-Risk Merchant** | 46 | 2 | Rahul Verma | ShopXYZ Online | $150.00 |
-| **3. ATM Fault** | 15 | 3 | Ananya Patel | ATM Withdrawal | $100.00 |
-| **3b. ATM Success** | 16 | 3 | Ananya Patel | ATM Withdrawal | $50.00 |
-| **4. Duplicate Transaction** | 17-18 | 4 | Vikram Singh | Taj Restaurant | $25.00 |
-| **5. Incorrect Amount** | 19 | 6 | Karthik Menon | Electronics Store | $50.00 |
-| **6. Subscription (Netflix)** | 32 | 5 | Meera Reddy | Netflix | $15.99 |
-| **6b. Active Subscription (Spotify)** | 33-44 | 4 | Vikram Singh | Spotify | $10.99 |
-| **7. EMI Overcharge** | 45 | 4 | Vikram Singh | Loan EMI Payment | $1500.00 |
-| **8. Refund Not Received** | 33 | 5 | Meera Reddy | Fashion Store | $35.00 |
-| **9. Quality Dispute** | 34 | 6 | Karthik Menon | Electronics Mart | $250.00 |
-| **10. Chargeback** | 35 | 1 | Priya Sharma | Online Gadgets | $180.00 |
+| **1.1 Fraudulent (International)** | 13 | 1 | Priya Sharma | Harrods Department Store | $250.00 |
+| **1.2 Velocity Fraud** | 14-18 | 1 | Priya Sharma | Multiple Merchants | $90.00 each |
+| **2. Merchant Dispute (Amazon)** | 19 | 2 | Rahul Verma | Amazon India | $799.99 |
+| **2b. High-Risk Merchant** | 68 | 2 | Rahul Verma | ShopXYZ Online | $150.00 |
+| **3. ATM Fault** | 20 | 3 | Ananya Patel | ATM Withdrawal | $100.00 |
+| **3b. ATM Success** | 21 | 3 | Ananya Patel | ATM Withdrawal | $50.00 |
+| **4. Duplicate Transaction** | 22-23 | 4 | Vikram Singh | Taj Restaurant | $25.00 |
+| **5. Incorrect Amount** | 24 | 6 | Karthik Menon | Electronics Store | $50.00 |
+| **6. Subscription (Netflix)** | 36 | 5 | Meera Reddy | Netflix | $15.99 |
+| **6b. Active Subscription (Spotify)** | 37-48 | 4 | Vikram Singh | Spotify | $10.99 |
+| **7. EMI Overcharge** | 49 | 4 | Vikram Singh | Loan EMI Payment | $1500.00 |
+| **8. Refund Not Received** | 50 | 5 | Meera Reddy | Fashion Store | $35.00 |
+| **9. Quality Dispute** | 51 | 6 | Karthik Menon | Electronics Mart | $250.00 |
+| **10. Chargeback** | 52 | 1 | Priya Sharma | Online Gadgets | $180.00 |
 
 ### Available Banking Tools
 
@@ -207,10 +208,10 @@ SELECT * FROM audit_trail WHERE dispute_id = <dispute_id> ORDER BY timestamp;
 **Input:**
 ```json
 {
-  "transaction_id": 13,
+  "transaction_id": 18,
   "customer_id": 1,
-  "category": "fraudulent_transaction",
-  "description": "5 transactions in 30 minutes - my card was stolen",
+  "category": "fraud",
+  "description": "My card was stolen and used without permission",
   "additional_context": {
     "transactions_in_hour": 5,
     "total_amount": 450,
@@ -219,12 +220,19 @@ SELECT * FROM audit_trail WHERE dispute_id = <dispute_id> ORDER BY timestamp;
 }
 ```
 
+**Note:** Use any of these velocity fraud transaction IDs: **14, 15, 16, 17, or 18**
+- All 5 transactions occurred within 16 minutes (4-minute intervals)
+- Each transaction is $90.00 across different cities
+- Total amount: $450.00
+- **Recommended:** Use transaction ID **18** (the last one) to see all 4 previous transactions in the velocity check
+
 **Expected Behavior:**
-- ✅ Fraud risk score: >90 (CRITICAL)
-- ✅ Velocity check fails (>3 transactions/hour)
-- ✅ Geographic anomaly (impossible travel)
-- ✅ Auto-approve the submitted fraudulent transaction
-- ✅ Card is immediately blocked, which automatically declines the other 4 pending charges on the network
+- ✅ Fraud risk score: >60 (HIGH) due to velocity
+- ✅ Velocity check detects: 4 transactions in last hour (HIGH risk)
+- ✅ Geographic anomaly (impossible travel between cities in 4-minute intervals)
+- ✅ Time anomaly (late night transactions at 02:44-02:50)
+- ✅ Decision: APPROVE or HUMAN_REVIEW_REQUIRED (depending on other factors)
+- ✅ Card should be blocked if auto-approved
 
 ---
 

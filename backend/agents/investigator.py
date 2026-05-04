@@ -32,241 +32,35 @@ except ImportError:
 
 def investigator_node(state: DisputeState) -> Dict[str, Any]:
     """
-    Investigator Agent: Gathers evidence using dynamic tool selection.
-    """
-    category = state["dispute_category"]
-    logger.info(f"[INVESTIGATOR AGENT] Gathering evidence for {category}...")
+    Supervisor Agent: Dynamically plans the execution path for worker agents.
     
-    logger.info(
-        f"[INVESTIGATOR AGENT] start | ticket_id={state.get('ticket_id')} | "
-        f"customer_id={state.get('customer_id')} | category={state.get('dispute_category')} | "
-        f"iteration={state.get('iteration_count', 0)}"
-    )
-
-    ticket_id = state["ticket_id"]
-    customer_id = state["customer_id"]
-    gathered_data = dict(state["gathered_data"])
-    audit_trail = list(state["audit_trail"])
-    working_memory = dict(state.get("working_memory", {}))
-    agent_memories = dict(state.get("agent_memories", {}))
-    iteration_count = state.get("iteration_count", 0)
-
-    db = SessionLocal()
-    try:
-        ticket = db.query(models.DisputeTicket).filter(
-            models.DisputeTicket.id == ticket_id
-        ).first()
-
-        if not ticket:
-            audit_trail.append("Investigator Agent: ERROR - Ticket not found")
-            return {
-                "gathered_data": gathered_data,
-                "audit_trail": audit_trail,
-                "investigation_confidence": 0.0,
-                "evidence_quality_score": 0.0,
-                "investigation_summary": "Ticket not found"
-            }
-
-        transaction_id: int = ticket.transaction_id  # type: ignore[assignment]
-
-        plan, planner_mode = _build_investigation_plan(
-            category=category,
-            customer_id=customer_id,
-            transaction_id=transaction_id,
-            customer_query=state["customer_query"],
-            working_memory=working_memory,
-            prior_gathered_data=gathered_data,
-            receipt_image_base64=state.get("receipt_image_base64"),
-        )
-
-        logger.info(
-            f"[INVESTIGATOR AGENT] plan_created | planner_mode={planner_mode} | "
-            f"steps={[step['tool'] for step in plan]}"
-        )
-        audit_trail.append(
-            f"Investigator Agent THOUGHT: Built investigation plan using {planner_mode}. "
-            f"Planned steps: {[step['tool'] for step in plan]}"
-        )
-
-        # Log parallel execution start
-        tool_names = [step["tool"] for step in plan]
-        logger.info(f"[INVESTIGATOR AGENT] Executing tools in parallel: {tool_names}")
+    This lightweight supervisor analyzes the dispute and determines which specialist
+    agents (workers) need to be activated based on the dispute category and context.
+    """
+    from loguru import logger
+    
+    category = state.get("dispute_category", "unknown")
+    working_memory = state.get("working_memory", {})
+    receipt_image = state.get("receipt_image_base64")
+    
+    logger.info(f"[SUPERVISOR AGENT] Analyzing ticket {state.get('ticket_id')} for dynamic routing...")
+    
+    # Start with an empty plan - data_retrieval is handled separately in the graph
+    plan = []
+    
+    # Conditionally wake up the Fraud Analyst
+    if category in ["fraud", "fraudulent_transaction", "unauthorized_transaction"]:
+        logger.info("[SUPERVISOR AGENT] Fraud detected. Waking up Fraud Analyst.")
+        plan.append("fraud_analyst")
         
-        # CRITICAL FIX: Execute get_transaction_details first if present, then execute rest
-        # This ensures merchant_name is available for merchant-related tools
-        executed_steps: List[str] = []
-        transaction_details_step = None
-        remaining_steps = []
+    # Conditionally wake up the Vision Expert
+    if receipt_image or working_memory.get("has_receipt_evidence"):
+        logger.info("[SUPERVISOR AGENT] Image evidence detected. Waking up Vision Forensics.")
+        plan.append("vision_expert")
         
-        for step in plan:
-            if step["tool"] == "get_transaction_details":
-                transaction_details_step = step
-            else:
-                remaining_steps.append(step)
-        
-        def execute_step(step: Dict[str, Any]) -> Tuple[str, str, Dict[str, Any], Dict[str, Any]]:
-            """Execute a single tool step and return results."""
-            tool_name = step["tool"]
-            tool_input = step["input"]
-            data_key = step["data_key"]
-            
-            logger.info(f"[INVESTIGATOR AGENT] Thought: need to use {tool_name}")
-            logger.debug(
-                f"[INVESTIGATOR AGENT] action=tool_call | tool={tool_name} | "
-                f"input={json.dumps(tool_input, default=str)}"
-            )
-            logger.info(f"[INVESTIGATOR AGENT] Action: calling {tool_name} with {tool_input}")
-            
-            observation = _execute_tool(tool_name, tool_input)
-            
-            logger.info(f"[INVESTIGATOR AGENT] Observation: {tool_name} returned data")
-            logger.info(
-                f"[INVESTIGATOR AGENT] observation | tool={tool_name} | "
-                f"output={json.dumps(observation, default=str)}"
-            )
-            
-            return tool_name, data_key, tool_input, observation
-        
-        # Execute transaction_details first if present
-        if transaction_details_step:
-            try:
-                tool_name, data_key, tool_input, observation = execute_step(transaction_details_step)
-                gathered_data[data_key] = observation
-                executed_steps.append(tool_name)
-                audit_trail.append(
-                    f"Investigator Agent ACTION: Calling {tool_name} with input {json.dumps(tool_input, default=str)}"
-                )
-                audit_trail.append(
-                    f"Investigator Agent OBSERVATION: {tool_name} returned {json.dumps(observation, default=str)}"
-                )
-                
-                # Extract merchant_name for subsequent tools
-                merchant_name = observation.get("merchant_name", "")
-                logger.info(f"[INVESTIGATOR AGENT] Extracted merchant_name from transaction_details: '{merchant_name}'")
-                
-                # Update remaining steps with merchant_name if needed
-                # Define placeholder patterns that should be treated as empty
-                placeholder_patterns = [
-                    "<merchant_name>",
-                    "<merchant_name_from_transaction_details>",
-                    "extracted_from_transaction_details",
-                    "<merchant>",
-                    "merchant_name",
-                    ""
-                ]
-                
-                for step in remaining_steps:
-                    if step["tool"] in ["check_merchant_reputation_score", "get_merchant_dispute_history"]:
-                        current_merchant = step["input"].get("merchant_name", "")
-                        logger.info(f"[INVESTIGATOR AGENT] Tool {step['tool']} current merchant_name: '{current_merchant}'")
-                        # Check if current merchant_name is empty or a placeholder
-                        if not current_merchant or current_merchant in placeholder_patterns:
-                            step["input"]["merchant_name"] = merchant_name
-                            logger.info(f"[INVESTIGATOR AGENT] Updated {step['tool']} with merchant_name: '{merchant_name}'")
-                        else:
-                            logger.info(f"[INVESTIGATOR AGENT] Tool {step['tool']} already has valid merchant_name, not updating")
-                    elif step["tool"] in ["check_subscription_status", "verify_subscription_cancellation"]:
-                        current_merchant = step["input"].get("merchant_name", "")
-                        if not current_merchant or current_merchant in placeholder_patterns:
-                            step["input"]["merchant_name"] = merchant_name
-                            logger.info(f"[INVESTIGATOR AGENT] Updated {step['tool']} with merchant_name: '{merchant_name}'")
-                    elif step["tool"] == "analyze_receipt_evidence":
-                        current_merchant = step["input"].get("expected_merchant", "")
-                        if not current_merchant or current_merchant in placeholder_patterns:
-                            step["input"]["expected_merchant"] = merchant_name
-                            logger.info(f"[INVESTIGATOR AGENT] Updated {step['tool']} with expected_merchant: '{merchant_name}'")
-                            
-            except Exception as e:
-                logger.error(f"[INVESTIGATOR AGENT] Tool execution failed: get_transaction_details - {str(e)}")
-                audit_trail.append(f"Investigator Agent ERROR: get_transaction_details failed - {str(e)}")
-        
-        # Execute remaining steps in parallel
-        if remaining_steps:
-            with ThreadPoolExecutor(max_workers=len(remaining_steps)) as executor:
-                # Submit all tasks
-                future_to_step = {executor.submit(execute_step, step): step for step in remaining_steps}
-                
-                # Collect results as they complete
-                for future in as_completed(future_to_step):
-                    try:
-                        tool_name, data_key, tool_input, observation = future.result()
-                        
-                        # Store results
-                        gathered_data[data_key] = observation
-                        executed_steps.append(tool_name)
-                        
-                        # Add to audit trail
-                        audit_trail.append(
-                            f"Investigator Agent ACTION: Calling {tool_name} with input {json.dumps(tool_input, default=str)}"
-                        )
-                        audit_trail.append(
-                            f"Investigator Agent OBSERVATION: {tool_name} returned {json.dumps(observation, default=str)}"
-                        )
-                    except Exception as e:
-                        step = future_to_step[future]
-                        tool_name = step["tool"]
-                        logger.error(f"[INVESTIGATOR AGENT] Tool execution failed: {tool_name} - {str(e)}")
-                        audit_trail.append(f"Investigator Agent ERROR: {tool_name} failed - {str(e)}")
-
-        investigation_confidence, evidence_quality_score, summary = _assess_evidence(
-            category=category,
-            gathered_data=gathered_data,
-            planner_mode=planner_mode,
-            iteration_count=iteration_count,
-            clarification_needed=working_memory.get("clarification_needed", False),
-        )
-
-        working_memory["last_investigation_plan"] = plan
-        working_memory["last_investigation_timestamp"] = datetime.utcnow().isoformat()
-
-        investigator_memory = agent_memories.get(
-            "investigator",
-            {
-                "agent_name": "investigator",
-                "past_actions": [],
-                "learned_patterns": {},
-                "confidence_history": [],
-            }
-        )
-        investigator_memory["past_actions"].append(
-            {
-                "timestamp": datetime.utcnow().isoformat(),
-                "category": category,
-                "executed_tools": executed_steps,
-                "planner_mode": planner_mode,
-                "summary": summary,
-            }
-        )
-        investigator_memory["confidence_history"].append(investigation_confidence)
-        agent_memories["investigator"] = investigator_memory
-
-        logger.success(
-            f"[INVESTIGATOR AGENT] complete | gathered_data_points={len(gathered_data)} | "
-            f"confidence={investigation_confidence:.2f} | quality={evidence_quality_score:.2f}"
-        )
-
-        return {
-            "gathered_data": gathered_data,
-            "audit_trail": audit_trail,
-            "investigation_confidence": investigation_confidence,
-            "evidence_quality_score": evidence_quality_score,
-            "investigation_summary": summary,
-            "working_memory": working_memory,
-            "agent_memories": agent_memories,
-        }
-
-    except Exception as e:
-        logger.exception(f"Error during investigation: {str(e)}")
-        audit_trail.append(f"Investigator Agent ERROR: {str(e)}")
-        return {
-            "gathered_data": gathered_data,
-            "audit_trail": audit_trail,
-            "investigation_confidence": 0.2,
-            "evidence_quality_score": 0.2,
-            "investigation_summary": f"Investigation failed: {str(e)}",
-        }
-    finally:
-        db.close()
+    logger.info(f"[SUPERVISOR AGENT] Final Routing Plan: {plan}")
+    
+    return {"routing_plan": plan}
 
 
 def _build_investigation_plan(
