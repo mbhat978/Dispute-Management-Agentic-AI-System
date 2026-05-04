@@ -85,7 +85,7 @@ def re_investigate_node(state: DisputeState) -> Dict[str, Any]:
     }
 
 
-def route_after_triage(state: DisputeState) -> Literal["clarification", "data_retrieval"]:
+def route_after_triage(state: DisputeState) -> Literal["clarification", "investigator"]:
     """
     Route low-confidence triage results through clarification first.
     """
@@ -99,10 +99,42 @@ def route_after_triage(state: DisputeState) -> Literal["clarification", "data_re
         )
         return "clarification"
     logger.info(
-        f"[ORCHESTRATOR] route_after_triage -> data_retrieval | "
+        f"[ORCHESTRATOR] route_after_triage -> investigator | "
         f"confidence={confidence:.2f} | requires_clarification={requires_clarification}"
     )
-    return "data_retrieval"
+    return "investigator"
+
+
+def route_after_investigation(state: DisputeState) -> Literal["re_investigate", "decision"]:
+    """
+    Route to re-investigation if evidence is insufficient and iterations remain.
+    Otherwise proceed to decision.
+    """
+    confidence = state.get("investigation_confidence", 0.0)
+    quality = state.get("evidence_quality_score", 0.0)
+    iteration_count = state.get("iteration_count", 0)
+    max_iterations = state.get("max_iterations", MAX_WORKFLOW_ITERATIONS)
+    summary = state.get("investigation_summary", "").lower()
+    
+    insufficient = (
+        confidence < CONFIDENCE_THRESHOLD_MEDIUM
+        or quality < CONFIDENCE_THRESHOLD_MEDIUM
+        or "insufficient evidence" in summary
+        or "need more information" in summary
+    )
+    
+    if insufficient and iteration_count < max_iterations:
+        logger.info(
+            f"[ORCHESTRATOR] route_after_investigation -> re_investigate | "
+            f"confidence={confidence:.2f} | quality={quality:.2f} | iteration={iteration_count}/{max_iterations}"
+        )
+        return "re_investigate"
+    
+    logger.info(
+        f"[ORCHESTRATOR] route_after_investigation -> decision | "
+        f"confidence={confidence:.2f} | quality={quality:.2f} | iteration={iteration_count}/{max_iterations}"
+    )
+    return "decision"
 
 
 def route_specialists(state: dict) -> list[str]:
@@ -171,10 +203,13 @@ def build_dispute_resolution_graph():
     Build and compile the LangGraph workflow for dispute resolution.
     
     This function creates a dynamic state graph with Supervisor-based conditional routing:
-    triage → clarification/investigator → data_retrieval → [conditional specialists] → decision → END or loop
+    triage → clarification/investigator → re_investigate/data_retrieval → [conditional specialists] → decision → END or loop
     
-    The Supervisor (investigator) creates a routing_plan that determines which specialists
-    (fraud_analyst, vision_expert) should run in parallel after data_retrieval.
+    The workflow includes:
+    - Clarification loop: Low triage confidence triggers clarification requests
+    - Re-investigation loop: Insufficient evidence triggers another investigation pass
+    - Supervisor routing: The investigator creates a routing_plan that determines which specialists
+      (fraud_analyst, vision_expert) should run in parallel after data_retrieval
     
     The checkpointer must be attached separately before execution.
     
@@ -206,15 +241,25 @@ def build_dispute_resolution_graph():
         route_after_triage,
         {
             "clarification": "clarification",
-            "data_retrieval": "investigator",  # Route to Supervisor first
+            "investigator": "investigator",  # Route to Supervisor first
         }
     )
 
     # After clarification, continue to Supervisor (investigator)
     workflow.add_edge("clarification", "investigator")
 
-    # Supervisor creates the routing plan, then data retrieval executes
-    workflow.add_edge("investigator", "data_retrieval")
+    # Conditional routing after investigation - check if re-investigation is needed
+    workflow.add_conditional_edges(
+        "investigator",
+        route_after_investigation,
+        {
+            "re_investigate": "re_investigate",
+            "decision": "data_retrieval",  # Proceed to data retrieval if evidence is sufficient
+        }
+    )
+
+    # Re-investigation loops back to investigator for another pass
+    workflow.add_edge("re_investigate", "investigator")
 
     # Data Retrieval hands off to the conditional parallel router
     # This uses the Supervisor's routing_plan to determine which specialists to activate
@@ -231,9 +276,6 @@ def build_dispute_resolution_graph():
     # Specialists converge on the Decision Agent
     workflow.add_edge("vision_expert", "decision")
     workflow.add_edge("fraud_analyst", "decision")
-
-    # Re-investigation performs another evidence pass before specialist analysis again
-    workflow.add_edge("re_investigate", "investigator")
 
     # Conditional routing after decision
     workflow.add_conditional_edges(
