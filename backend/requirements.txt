@@ -19,6 +19,9 @@ httpx>=0.27.0,<1.0.0
 
 # Additional utilities
 python-dotenv
+aiosmtplib
+schedule
+email-validator>=2.0.0  # For GDPR compliance email validation
 
 # Rate limiting and retry logic
 slowapi>=0.1.9

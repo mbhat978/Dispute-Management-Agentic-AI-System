@@ -2,19 +2,19 @@
 echo Starting Enterprise AI Banking Cluster...
 
 echo Launching Core Banking MCP Server (Port 8001)...
-start "Core Banking MCP" cmd /k "call venv\Scripts\activate && cd backend && python mcp_servers/core_banking_server.py"
+start "Core Banking MCP" cmd /k "call cd backend && venv\Scripts\activate && python mcp_servers/core_banking_server.py"
 
 echo Launching Compliance MCP Server (Port 8002)...
-start "Compliance MCP" cmd /k "call venv\Scripts\activate && cd backend && python mcp_servers/compliance_server.py"
+start "Compliance MCP" cmd /k "call cd backend && venv\Scripts\activate  && python mcp_servers/compliance_server.py"
 
 echo Launching Enhanced Banking Tools MCP Server (Port 8003)...
-start "Enhanced Banking MCP" cmd /k "call venv\Scripts\activate && cd backend && python mcp_servers/enhanced_banking_tools.py"
+start "Enhanced Banking MCP" cmd /k "call cd backend && venv\Scripts\activate  && python mcp_servers/enhanced_banking_tools.py"
 
 echo Waiting for MCP servers to initialize...
 timeout /t 5 /nobreak
 
 echo Launching FastAPI AI Orchestrator (Port 8000)...
-start "FastAPI Backend" cmd /k "call venv\Scripts\activate && cd backend && uvicorn main:app --host 0.0.0.0 --port 8000"
+start "FastAPI Backend" cmd /k "call cd backend && venv\Scripts\activate  && uvicorn main:app --host 0.0.0.0 --port 8000"
 
 echo Cluster launched successfully!
 

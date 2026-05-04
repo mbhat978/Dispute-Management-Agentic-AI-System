@@ -1,0 +1,77 @@
+%%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#e0f2fe','primaryTextColor':'#0c4a6e','primaryBorderColor':'#0ea5e9','lineColor':'#94a3b8','secondaryColor':'#f3e8ff','tertiaryColor':'#d1fae5'}}}%%
+
+flowchart TB
+    %% Light and Transparent Styling
+    classDef frontend fill:#dbeafe,stroke:#3b82f6,stroke-width:2px,color:#1e40af,opacity:0.9
+    classDef backend fill:#e9d5ff,stroke:#a855f7,stroke-width:2px,color:#6b21a8,opacity:0.9
+    classDef agent fill:#d1fae5,stroke:#10b981,stroke-width:2px,color:#065f46,opacity:0.9
+    classDef mcp fill:#fed7aa,stroke:#f59e0b,stroke-width:2px,color:#92400e,opacity:0.9
+    classDef database fill:#fecaca,stroke:#ef4444,stroke-width:2px,color:#991b1b,opacity:0.9
+    classDef external fill:#e0e7ff,stroke:#6366f1,stroke-width:2px,color:#3730a3,opacity:0.9
+
+    %% Frontend
+    UI[Web Interface<br/>Next.js + React]
+    Customer[Customer Portal<br/>Submit & Track Disputes]
+    Employee[Employee Portal<br/>Review & Approve]
+
+    %% Backend
+    API[FastAPI Backend<br/>REST + SSE Streaming]
+    
+    %% Orchestrator
+    Orchestrator[LangGraph Orchestrator<br/>Workflow Manager]
+    
+    %% Agents
+    Triage[Triage Agent<br/>Classify & Extract]
+    Investigator[Investigator Agent<br/>Gather Evidence]
+    Decision[Decision Agent<br/>Make Decision]
+    Human[Human Review<br/>HITL Checkpoint]
+    
+    %% MCP Servers
+    CoreMCP[Core Banking MCP<br/>Port 8001<br/>Transaction & Card Tools]
+    CompMCP[Compliance MCP<br/>Port 8002<br/>Policy & Risk Tools]
+    EnhMCP[Enhanced Banking MCP<br/>Port 8003<br/>Merchant & Vision AI]
+    
+    %% Databases
+    MainDB[(Main Database<br/>dispute_management.db)]
+    CheckpointDB[(Checkpoint DB<br/>checkpoints.db)]
+    
+    %% External
+    OpenAI[OpenAI GPT-4<br/>LLM Provider]
+    Email[Email Service<br/>Notifications]
+    
+    %% Connections
+    UI --> Customer
+    UI --> Employee
+    Customer --> API
+    Employee --> API
+    
+    API --> Orchestrator
+    Orchestrator --> CheckpointDB
+    
+    Orchestrator --> Triage
+    Triage --> Investigator
+    Investigator --> Decision
+    Decision --> Human
+    Human --> Decision
+    Decision --> Orchestrator
+    
+    Triage -.-> CoreMCP
+    Investigator -.-> CoreMCP
+    Investigator -.-> CompMCP
+    Investigator -.-> EnhMCP
+    Decision -.-> CoreMCP
+    
+    CoreMCP --> MainDB
+    CompMCP --> MainDB
+    EnhMCP --> MainDB
+    
+    Orchestrator -.-> OpenAI
+    API -.-> Email
+    
+    %% Apply styles
+    class UI,Customer,Employee frontend
+    class API backend
+    class Orchestrator,Triage,Investigator,Decision,Human agent
+    class CoreMCP,CompMCP,EnhMCP mcp
+    class MainDB,CheckpointDB database
+    class OpenAI,Email external

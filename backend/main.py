@@ -33,11 +33,26 @@ try:
     from . import models
     from .agents.state import DisputeState, initialize_dispute_state
     from .agents.orchestrator import get_workflow
+    from .email_service import (
+        send_dispute_approval_email_sync,
+        send_dispute_rejection_email_sync
+    )
+    from .config import get_smtp_config
 except ImportError:
     from database import engine, get_db, Base
     import models
     from agents.state import DisputeState, initialize_dispute_state
     from agents.orchestrator import get_workflow
+    from email_service import (
+        send_dispute_approval_email_sync,
+        send_dispute_rejection_email_sync
+    )
+# Import compliance routes
+try:
+    from .compliance_routes import router as compliance_router
+except ImportError:
+    from compliance_routes import router as compliance_router
+    from config import get_smtp_config
 
 # Import AsyncSqliteSaver for checkpointing
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver  # type: ignore[import-untyped]
@@ -61,6 +76,9 @@ app.add_middleware(
     allow_headers=["*"],  # Allow all headers
     expose_headers=["*"],  # Expose all headers for SSE
 )
+
+# Include compliance router
+app.include_router(compliance_router)
 
 stream_subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
 STREAM_HEARTBEAT_SECONDS = 15
@@ -689,6 +707,32 @@ async def approve_dispute(ticket_id: int, db: Session = Depends(get_db)):
         
         db.commit()
         db.refresh(dispute)
+
+        # Send approval email to customer
+        try:
+            customer = db.query(models.Customer).filter(models.Customer.id == dispute.customer_id).first()
+            transaction = db.query(models.Transaction).filter(models.Transaction.id == dispute.transaction_id).first()
+
+            if customer and transaction:
+                email_sent = send_dispute_approval_email_sync(
+                    customer_email=customer.email,
+                    customer_name=customer.name,
+                    ticket_id=ticket_id,
+                    transaction_amount=transaction.amount,
+                    merchant_name=transaction.merchant_name,
+                    transaction_date=transaction.transaction_date.strftime("%B %d, %Y"),
+                    resolution_notes=dispute.resolution_notes or "Your dispute has been approved.",
+                    dispute_category=dispute.dispute_category or "general",
+                    created_at=dispute.created_at.strftime("%B %d, %Y"),
+                    resolved_at=datetime.utcnow().strftime("%B %d, %Y at %I:%M %p UTC")
+                )
+                if email_sent:
+                    logger.info(f"[EMAIL] Approval email sent successfully for ticket #{ticket_id}")
+                else:
+                    logger.warning(f"[EMAIL] Approval email failed to send for ticket #{ticket_id}")
+        except Exception as email_error:
+            logger.error(f"[EMAIL] Failed to send approval email for ticket #{ticket_id}: {str(email_error)}")
+            # Don't fail the whole request if email fails
         
         return {
             "status": "success",
@@ -756,6 +800,32 @@ async def reject_dispute(ticket_id: int, db: Session = Depends(get_db)):
         
         db.commit()
         db.refresh(dispute)
+        
+        # Send rejection email notification
+        try:
+            customer = db.query(models.Customer).filter(models.Customer.id == dispute.customer_id).first()
+            transaction = db.query(models.Transaction).filter(models.Transaction.id == dispute.transaction_id).first()
+
+            if customer and transaction:
+                email_sent = send_dispute_rejection_email_sync(
+                    customer_email=customer.email,
+                    customer_name=customer.name,
+                    ticket_id=ticket_id,
+                    transaction_amount=transaction.amount,
+                    merchant_name=transaction.merchant_name,
+                    transaction_date=transaction.transaction_date.strftime("%B %d, %Y"),
+                    resolution_notes=dispute.resolution_notes or "Your dispute has been rejected after careful review.",
+                    dispute_category=dispute.dispute_category or "general",
+                    created_at=dispute.created_at.strftime("%B %d, %Y"),
+                    resolved_at=datetime.utcnow().strftime("%B %d, %Y at %I:%M %p UTC")
+                )
+                if email_sent:
+                    logger.info(f"[EMAIL] Rejection email sent successfully for ticket #{ticket_id}")
+                else:
+                    logger.warning(f"[EMAIL] Rejection email failed to send for ticket #{ticket_id}")
+        except Exception as email_error:
+            logger.error(f"[EMAIL] Failed to send rejection email for ticket #{ticket_id}: {str(email_error)}")
+            # Don't fail the whole request if email fails
         
         return {
             "status": "success",
@@ -894,6 +964,33 @@ their judgment to override or confirm the AI recommendation."""
         logger.info("Ticket #%s status updated to: %s", ticket_id, request.resolution_status)
         logger.info("Audit log entry created")
         logger.info("%s", "=" * 80)
+
+        # Send approval email if status is resolved_approved
+        if request.resolution_status == "resolved_approved":
+            try:
+                customer = db.query(models.Customer).filter(models.Customer.id == dispute.customer_id).first()
+                transaction = db.query(models.Transaction).filter(models.Transaction.id == dispute.transaction_id).first()
+
+                if customer and transaction:
+                    email_sent = send_dispute_approval_email_sync(
+                        customer_email=customer.email,
+                        customer_name=customer.name,
+                        ticket_id=ticket_id,
+                        transaction_amount=transaction.amount,
+                        merchant_name=transaction.merchant_name,
+                        transaction_date=transaction.transaction_date.strftime("%B %d, %Y"),
+                        resolution_notes=dispute.resolution_notes or "Your dispute has been approved after human review.",
+                        dispute_category=dispute.dispute_category or "general",
+                        created_at=dispute.created_at.strftime("%B %d, %Y"),
+                        resolved_at=datetime.utcnow().strftime("%B %d, %Y at %I:%M %p UTC")
+                    )
+                    if email_sent:
+                        logger.info(f"[EMAIL] Approval email sent successfully for resolved ticket #{ticket_id}")
+                    else:
+                        logger.warning(f"[EMAIL] Approval email failed to send for resolved ticket #{ticket_id}")
+            except Exception as email_error:
+                logger.error(f"[EMAIL] Failed to send approval email for ticket #{ticket_id}: {str(email_error)}")
+                # Don't fail the whole request if email fails
         
         return {
             "status": "success",
@@ -1411,6 +1508,60 @@ async def resume_dispute(
         logger.info("=" * 80)
         logger.info(f"Final Decision: {final_state.get('final_decision', 'UNKNOWN').upper()}")
         logger.info("=" * 80)
+        
+        # Send email notification based on final decision
+        final_decision = final_state.get("final_decision", "unknown")
+        if final_decision in ["resolved_approved", "auto_approved"]:
+            try:
+                customer = db.query(models.Customer).filter(models.Customer.id == dispute.customer_id).first()
+                transaction = db.query(models.Transaction).filter(models.Transaction.id == dispute.transaction_id).first()
+
+                if customer and transaction:
+                    email_sent = send_dispute_approval_email_sync(
+                        customer_email=customer.email,
+                        customer_name=customer.name,
+                        ticket_id=ticket_id,
+                        transaction_amount=transaction.amount,
+                        merchant_name=transaction.merchant_name,
+                        transaction_date=transaction.transaction_date.strftime("%B %d, %Y"),
+                        resolution_notes=dispute.resolution_notes or "Your dispute has been approved after human review.",
+                        dispute_category=dispute.dispute_category or "general",
+                        created_at=dispute.created_at.strftime("%B %d, %Y"),
+                        resolved_at=datetime.utcnow().strftime("%B %d, %Y at %I:%M %p UTC")
+                    )
+                    if email_sent:
+                        logger.info(f"[EMAIL] Approval email sent successfully for resumed ticket #{ticket_id}")
+                    else:
+                        logger.warning(f"[EMAIL] Approval email failed to send for resumed ticket #{ticket_id}")
+            except Exception as email_error:
+                logger.error(f"[EMAIL] Failed to send approval email for resumed ticket #{ticket_id}: {str(email_error)}")
+                # Don't fail the whole request if email fails
+        
+        elif final_decision in ["resolved_rejected", "auto_rejected"]:
+            try:
+                customer = db.query(models.Customer).filter(models.Customer.id == dispute.customer_id).first()
+                transaction = db.query(models.Transaction).filter(models.Transaction.id == dispute.transaction_id).first()
+
+                if customer and transaction:
+                    email_sent = send_dispute_rejection_email_sync(
+                        customer_email=customer.email,
+                        customer_name=customer.name,
+                        ticket_id=ticket_id,
+                        transaction_amount=transaction.amount,
+                        merchant_name=transaction.merchant_name,
+                        transaction_date=transaction.transaction_date.strftime("%B %d, %Y"),
+                        resolution_notes=dispute.resolution_notes or "Your dispute has been rejected after careful review.",
+                        dispute_category=dispute.dispute_category or "general",
+                        created_at=dispute.created_at.strftime("%B %d, %Y"),
+                        resolved_at=datetime.utcnow().strftime("%B %d, %Y at %I:%M %p UTC")
+                    )
+                    if email_sent:
+                        logger.info(f"[EMAIL] Rejection email sent successfully for resumed ticket #{ticket_id}")
+                    else:
+                        logger.warning(f"[EMAIL] Rejection email failed to send for resumed ticket #{ticket_id}")
+            except Exception as email_error:
+                logger.error(f"[EMAIL] Failed to send rejection email for resumed ticket #{ticket_id}: {str(email_error)}")
+                # Don't fail the whole request if email fails
         
         broadcast_stream_event(
             "resume_completed",

@@ -27,6 +27,7 @@ try:
         should_escalate_to_human,
         get_human_review_priority,
     )
+    from ..email_service import send_dispute_approval_email
 except ImportError:
     import mcp_client as banking_tools
     import models
@@ -39,6 +40,7 @@ except ImportError:
         should_escalate_to_human,
         get_human_review_priority,
     )
+    from email_service import send_dispute_approval_email
 
 
 def decision_node(state: DisputeState) -> Dict[str, Any]:

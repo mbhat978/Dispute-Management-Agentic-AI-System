@@ -44,7 +44,8 @@ def create_customers(db: Session):
             account_tier="Premium",
             current_account_balance=12500.00,
             card_number="**** **** **** 9876",
-            card_status="Active"
+            card_status="Active",
+            email="manisha.bhattacharjee@ibm.com"
         ),
         # Customer 2: Gold tier - For merchant disputes (Amazon + high-risk merchant)
         models.Customer(
@@ -52,7 +53,8 @@ def create_customers(db: Session):
             account_tier="Gold",
             current_account_balance=8500.00,
             card_number="**** **** **** 5432",
-            card_status="Active"
+            card_status="Active",
+            email="manisha.bhattacharjee@ibm.com"
         ),
         # Customer 3: Basic tier - For ATM disputes
         models.Customer(
@@ -60,7 +62,8 @@ def create_customers(db: Session):
             account_tier="Basic",
             current_account_balance=3500.00,
             card_number="**** **** **** 3210",
-            card_status="Active"
+            card_status="Active",
+            email="manisha.bhattacharjee@ibm.com"
         ),
         # Customer 4: Premium tier - For duplicate transaction + EMI dispute
         models.Customer(
@@ -68,7 +71,8 @@ def create_customers(db: Session):
             account_tier="Premium",
             current_account_balance=25000.00,
             card_number="**** **** **** 6789",
-            card_status="Active"
+            card_status="Active",
+            email="manisha.bhattacharjee@ibm.com"
         ),
         # Customer 5: Gold tier - For subscription + refund disputes
         models.Customer(
@@ -76,7 +80,8 @@ def create_customers(db: Session):
             account_tier="Gold",
             current_account_balance=6500.00,
             card_number="**** **** **** 1357",
-            card_status="Active"
+            card_status="Active",
+            email="manisha.bhattacharjee@ibm.com"
         ),
         # Customer 6: Basic tier - For incorrect amount + quality disputes
         models.Customer(
@@ -84,7 +89,8 @@ def create_customers(db: Session):
             account_tier="Basic",
             current_account_balance=4200.00,
             card_number="**** **** **** 4680",
-            card_status="Active"
+            card_status="Active",
+            email="manisha.bhattacharjee@ibm.com"
         )
     ]
     
@@ -93,7 +99,7 @@ def create_customers(db: Session):
     
     for customer in customers:
         db.refresh(customer)
-        print(f"  ✓ {customer.name} (ID: {customer.id}, Tier: {customer.account_tier}, Balance: ${customer.current_account_balance:,.2f})")
+        print(f"  ✓ {customer.name} (ID: {customer.id}, Tier: {customer.account_tier}, Balance: ${customer.current_account_balance:,.2f}, Email: {customer.email})")
     
     return customers
 

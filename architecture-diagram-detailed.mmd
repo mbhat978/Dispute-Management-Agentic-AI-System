@@ -1,0 +1,97 @@
+%%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#f8fafc','primaryTextColor':'#0f172a','primaryBorderColor':'#cbd5e1','lineColor':'#94a3b8','secondaryColor':'#f8fafc','tertiaryColor':'#f8fafc','background':'#ffffff'}}}%%
+
+flowchart TB
+    %% Light and Transparent Styling
+    classDef frontend fill:#dbeafe,stroke:#3b82f6,stroke-width:2px,color:#1e40af,opacity:0.9
+    classDef backend fill:#e9d5ff,stroke:#a855f7,stroke-width:2px,color:#6b21a8,opacity:0.9
+    classDef agent fill:#d1fae5,stroke:#10b981,stroke-width:2px,color:#065f46,opacity:0.9
+    classDef mcp fill:#fed7aa,stroke:#f59e0b,stroke-width:2px,color:#92400e,opacity:0.9
+    classDef database fill:#fecaca,stroke:#ef4444,stroke-width:2px,color:#991b1b,opacity:0.9
+    classDef external fill:#e0e7ff,stroke:#6366f1,stroke-width:2px,color:#3730a3,opacity:0.9
+
+    %% Frontend Layer
+    subgraph Frontend[" Frontend - Next.js Port 3000 "]
+        UI[Web Interface]
+        Customer[Customer Portal]
+        Employee[Employee Portal]
+    end
+
+    %% Backend Layer
+    subgraph Backend[" Backend - FastAPI Port 8000 "]
+        API[REST API + SSE Streaming]
+    end
+
+    %% AI Orchestration
+    subgraph AILayer[" AI Orchestration - LangGraph "]
+        Orchestrator[Workflow Orchestrator]
+        
+        subgraph Agents[" ReAct Agent Pipeline "]
+            Triage[1. Triage Agent]
+            Investigator[2. Investigator Agent]
+            Decision[3. Decision Agent]
+        end
+        
+        Human[Human Review Node]
+    end
+
+    %% MCP Servers
+    subgraph MCPLayer[" MCP Servers - Model Context Protocol "]
+        CoreMCP[Core Banking Server<br/>Port 8001]
+        CompMCP[Compliance Server<br/>Port 8002]
+        EnhMCP[Enhanced Banking Server<br/>Port 8003]
+    end
+
+    %% Data Layer
+    subgraph DataLayer[" Data Persistence - SQLite "]
+        MainDB[(Main Database)]
+        CheckpointDB[(Checkpoint Database)]
+    end
+
+    %% External Services
+    subgraph ExternalLayer[" External Services "]
+        OpenAI[OpenAI GPT-4]
+        Email[Email Service]
+        LangSmith[LangSmith Tracing]
+    end
+
+    %% Main Flow
+    UI --> Customer
+    UI --> Employee
+    Customer -->|Submit Dispute| API
+    Employee -->|Review Cases| API
+    
+    API --> Orchestrator
+    Orchestrator <-->|State Management| CheckpointDB
+    
+    %% Agent Flow
+    Orchestrator --> Triage
+    Triage --> Investigator
+    Investigator --> Decision
+    Decision -->|Requires Review| Human
+    Human --> Decision
+    Decision --> Orchestrator
+    
+    %% MCP Tool Calls
+    Triage -.->|Query Tools| CoreMCP
+    Investigator -.->|Execute Tools| CoreMCP
+    Investigator -.->|Execute Tools| CompMCP
+    Investigator -.->|Execute Tools| EnhMCP
+    Decision -.->|Verify| CoreMCP
+    
+    %% Data Access
+    CoreMCP <--> MainDB
+    CompMCP <--> MainDB
+    EnhMCP <--> MainDB
+    
+    %% External Integrations
+    Orchestrator -.->|LLM Calls| OpenAI
+    API -.->|Notifications| Email
+    Orchestrator -.->|Trace| LangSmith
+    
+    %% Apply Styles
+    class UI,Customer,Employee frontend
+    class API backend
+    class Orchestrator,Triage,Investigator,Decision,Human agent
+    class CoreMCP,CompMCP,EnhMCP mcp
+    class MainDB,CheckpointDB database
+    class OpenAI,Email,LangSmith external

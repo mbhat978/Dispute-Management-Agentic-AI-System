@@ -6,6 +6,7 @@ proper log streaming for asynchronous operations.
 """
 import sys
 import logging
+import os
 from loguru import logger
 
 
@@ -63,5 +64,53 @@ def setup_logging():
     logging.getLogger("openai").setLevel(logging.WARNING)
     
     logger.info("Logging configuration initialized successfully")
+
+# SMTP Email Configuration
+def get_smtp_config():
+    """
+    Load SMTP configuration from environment variables.
+    
+    Returns:
+        dict: SMTP configuration dictionary with the following keys:
+            - host: SMTP server hostname
+            - port: SMTP server port
+            - username: SMTP authentication username
+            - password: SMTP authentication password
+            - from_email: Email address to send from
+            - from_name: Display name for the sender
+            - use_tls: Whether to use implicit TLS (for port 465)
+            - start_tls: Whether to use STARTTLS (for port 587)
+    """
+    port = int(os.getenv("SMTP_PORT", "587"))
+
+    # For port 587, use STARTTLS; for port 465, use implicit TLS
+    if port == 587:
+        use_tls = False
+        start_tls = True
+    elif port == 465:
+        use_tls = True
+        start_tls = False
+    else:
+        # Custom port - check environment variable
+        use_tls = os.getenv("SMTP_USE_TLS", "false").lower() == "true"
+        start_tls = os.getenv("SMTP_START_TLS", "true").lower() == "true"
+
+    smtp_username = os.getenv("SMTP_USERNAME", "")
+    smtp_from_email = os.getenv("SMTP_FROM_EMAIL", "")
+    
+    # If SMTP_FROM_EMAIL is not set, use the username as from_email
+    if not smtp_from_email and smtp_username:
+        smtp_from_email = smtp_username
+    
+    return {
+        "host": os.getenv("SMTP_HOST", "smtp.gmail.com"),
+        "port": port,
+        "username": smtp_username,
+        "password": os.getenv("SMTP_PASSWORD", ""),
+        "from_email": smtp_from_email,
+        "from_name": os.getenv("SMTP_FROM_NAME", "Dispute Management System"),
+        "use_tls": use_tls,
+        "start_tls": start_tls,
+    }
 
 # Made with Bob
