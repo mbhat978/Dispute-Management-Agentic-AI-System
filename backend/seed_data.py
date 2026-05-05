@@ -181,7 +181,7 @@ def create_test_scenario_transactions(db: Session, customers):
     # ========================================================================
     # SCENARIO 1: FRAUDULENT TRANSACTION - International (Customer 1)
     # ========================================================================
-    print("\n  📍 Scenario 1: Fraudulent Transaction - International")
+    print("\n  📍 Scenario 1.1: Fraudulent Transaction - International")
     trans_fraud = models.Transaction(
         customer_id=customers[0].id,  # Priya Sharma
         amount=250.00,
@@ -197,6 +197,39 @@ def create_test_scenario_transactions(db: Session, customers):
     db.refresh(trans_fraud)
     transactions.append(trans_fraud)
     print(f"    ✓ ID {trans_fraud.id}: ${trans_fraud.amount:,.2f} to {trans_fraud.merchant_name} (London, UK)")
+    
+    # ========================================================================
+    # SCENARIO 1.2: VELOCITY FRAUD - Multiple Transactions in 30 Minutes
+    # ========================================================================
+    print("\n  📍 Scenario 1.2: Velocity Fraud - 5 Transactions in 30 Minutes")
+    velocity_base_time = base_time + timedelta(days=2, hours=10)
+    
+    velocity_transactions = [
+        (90.00, "Delhi Electronics", "Delhi"),
+        (85.00, "Mumbai Fashion Store", "Mumbai"),
+        (95.00, "Bangalore Tech Hub", "Bangalore"),
+        (80.00, "Chennai Supermarket", "Chennai"),
+        (100.00, "Kolkata Jewelers", "Kolkata")
+    ]
+    
+    for idx, (amount, merchant, location) in enumerate(velocity_transactions):
+        trans_velocity = models.Transaction(
+            customer_id=customers[0].id,  # Priya Sharma
+            amount=amount,
+            merchant_name=merchant,
+            transaction_date=velocity_base_time + timedelta(minutes=idx*6),  # 6 minutes apart
+            status="success",
+            is_international=False,
+            refunded_amount=0.0,
+            transaction_type="debit"
+        )
+        db.add(trans_velocity)
+        db.commit()
+        db.refresh(trans_velocity)
+        transactions.append(trans_velocity)
+        print(f"    ✓ ID {trans_velocity.id}: ${trans_velocity.amount:,.2f} to {trans_velocity.merchant_name} ({location}) - {idx*6} min")
+    
+    print(f"    ⚠️  VELOCITY FRAUD: 5 transactions totaling $450 in 30 minutes across 5 cities!")
     
     # ========================================================================
     # SCENARIO 2: MERCHANT DISPUTE - Item Not Delivered (Customer 2)

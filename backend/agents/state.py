@@ -142,6 +142,24 @@ def initialize_dispute_state(
                 "learned_patterns": {},
                 "confidence_history": []
             },
+            "data_retrieval": {
+                "agent_name": "data_retrieval",
+                "past_actions": [],
+                "learned_patterns": {},
+                "confidence_history": []
+            },
+            "fraud_analyst": {
+                "agent_name": "fraud_analyst",
+                "past_actions": [],
+                "learned_patterns": {},
+                "confidence_history": []
+            },
+            "vision_forensics": {
+                "agent_name": "vision_forensics",
+                "past_actions": [],
+                "learned_patterns": {},
+                "confidence_history": []
+            },
             "decision": {
                 "agent_name": "decision",
                 "past_actions": [],

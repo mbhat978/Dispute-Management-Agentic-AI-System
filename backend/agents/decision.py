@@ -214,15 +214,54 @@ RULE VALIDATION:
             logger.success(f"[DECISION AGENT] ticket_updated | ticket_id={ticket_id} | status={ticket.status}")
 
         for entry in audit_trail:
-            if "THOUGHT:" in entry or "Triage Agent" in entry or "Clarification Agent" in entry or "Orchestrator:" in entry:
+            # Detect specialized agent activities
+            if "DataRetrievalAgent" in entry:
+                agent_name = "DataRetrievalAgent"
+                if "ACTION:" in entry:
+                    action_type = "tool_call"
+                elif "OBSERVATION:" in entry:
+                    action_type = "observation"
+                elif "ERROR:" in entry:
+                    action_type = "error"
+                else:
+                    action_type = "thought"
+            elif "FraudAnalystAgent" in entry:
+                agent_name = "FraudAnalystAgent"
+                if "ACTION:" in entry:
+                    action_type = "tool_call"
+                elif "OBSERVATION:" in entry:
+                    action_type = "observation"
+                elif "THOUGHT:" in entry:
+                    action_type = "thought"
+                elif "ERROR:" in entry:
+                    action_type = "error"
+                else:
+                    action_type = "analysis"
+            elif "VisionForensicsAgent" in entry:
+                agent_name = "VisionForensicsAgent"
+                if "ACTION:" in entry:
+                    action_type = "tool_call"
+                elif "OBSERVATION:" in entry:
+                    action_type = "observation"
+                elif "THOUGHT:" in entry:
+                    action_type = "thought"
+                elif "ERROR:" in entry:
+                    action_type = "error"
+                else:
+                    action_type = "analysis"
+            elif "THOUGHT:" in entry or "Triage Agent" in entry or "Clarification Agent" in entry or "Orchestrator:" in entry:
                 action_type = "thought"
                 agent_name = "System"
-            elif "ACTION:" in entry:
-                action_type = "tool_call"
+            elif "Investigator Agent" in entry:
                 agent_name = "InvestigatorAgent"
-            elif "OBSERVATION:" in entry:
-                action_type = "observation"
-                agent_name = "InvestigatorAgent"
+                if "ACTION:" in entry:
+                    action_type = "tool_call"
+                elif "OBSERVATION:" in entry:
+                    action_type = "observation"
+                elif "THOUGHT:" in entry:
+                    action_type = "thought"
+                else:
+                    action_type = "thought"
             elif "DECISION:" in entry or "Decision Agent ANALYSIS:" in entry:
                 action_type = "decision"
                 agent_name = "DecisionAgent"
@@ -637,19 +676,32 @@ def _validate_decision_against_rules(
         refund_status = gathered_data.get("refund_status", {})
         status_str = refund_status.get("refund_status", "") if isinstance(refund_status, dict) else ""
         
+        # DEBUG: Log all gathered_data keys to diagnose the issue
+        logger.info(f"[DECISION AGENT] gathered_data_keys={list(gathered_data.keys())}")
+        
         # Check both standard timeline and new Vision-extracted timeline
-        vision_timeline = gathered_data.get("calculate_timeline_from_evidence", {})
+        # The key is 'timeline_from_evidence' not 'calculate_timeline_from_evidence'
+        vision_timeline = gathered_data.get("timeline_from_evidence", {})
         if isinstance(vision_timeline, str):
             try:
                 vision_timeline = json.loads(vision_timeline)
             except:
                 vision_timeline = {}
+        
+        # DEBUG: Log what we got from vision timeline
+        logger.info(f"[DECISION AGENT] vision_timeline_raw={vision_timeline}")
                 
         std_timeline = gathered_data.get("refund_timeline", {})
         
         # Prioritize the physically verified days_elapsed from Vision
         days_elapsed = vision_timeline.get("days_elapsed") or std_timeline.get("days_elapsed", 0)
         is_valid_proof = vision_timeline.get("is_valid_proof", False)
+        
+        # DEBUG: Log the values being checked
+        logger.info(
+            f"[DECISION AGENT] refund_validation | days_elapsed={days_elapsed} | "
+            f"is_valid_proof={is_valid_proof} | status_str='{status_str}'"
+        )
         
         # Rule 1: Check if refund is pending at gateway
         if "Pending" in status_str:
@@ -659,12 +711,15 @@ def _validate_decision_against_rules(
                 return "auto_rejected", "Refund is currently pending at gateway within normal timeframes. Customer must wait."
         
         # Rule 2: Check if customer has valid proof and merchant is non-responsive
-        # This rule takes precedence over LLM decision when evidence is strong
-        if is_valid_proof and days_elapsed > 14:
+        # This rule takes precedence over "no refund initiated" check when evidence is strong
+        # CRITICAL: This must be checked BEFORE Rule 3 to handle delayed refunds properly
+        # Auto-approve if valid proof AND 14+ days elapsed (merchant had 2 weeks to respond)
+        if is_valid_proof and days_elapsed >= 14:
             return "auto_approved", f"Valid return proof provided. Merchant non-responsive for {days_elapsed} days. Escalating to chargeback."
         
         # Rule 3: If no refund initiated and no strong evidence, require human review
-        if "No Refund Initiated" in status_str:
+        # Only trigger this if we don't have valid proof or sufficient time hasn't elapsed
+        if "No Refund Initiated" in status_str and (not is_valid_proof or days_elapsed < 14):
             return "human_review_required", "Merchant has not initiated refund. Requires manual review of return receipt."
         
         # Rule 4: Allow LLM decision if none of the above rules apply
